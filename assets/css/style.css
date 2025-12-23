@@ -1,0 +1,162 @@
+body {
+    background-color: #f8f9fa;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.navbar-brand {
+    font-weight: bold;
+}
+
+.card {
+    margin-bottom: 20px;
+    box-shadow: 0 .125rem .25rem rgba(0,0,0,.075);
+}
+
+.login-container {
+    margin-top: 100px;
+}
+
+.form-control:focus {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+.btn-primary {
+    background-color: #0d6efd;
+    border-color: #0d6efd;
+}
+
+.btn-primary:hover {
+    background-color: #0b5ed7;
+    border-color: #0a58ca;
+}
+
+.table {
+    width: 100%;
+    margin-bottom: 1rem;
+    color: #212529;
+    vertical-align: middle;
+}
+
+.nav-tabs .nav-link.active {
+    font-weight: bold;
+}
+
+/* Accordion sual görünüşləri */
+.accordion-button.bg-success:not(.collapsed),
+.accordion-button.bg-danger:not(.collapsed) {
+    color: white;
+}
+
+.accordion-button.bg-success:not(.collapsed)::after,
+.accordion-button.bg-danger:not(.collapsed)::after {
+    filter: brightness(0) invert(1);
+}
+
+/* İmtahan vaxtı üçün stil */
+#timer {
+    font-weight: bold;
+    font-size: 1.5rem;
+}
+
+/* İmtahan suallarının stilləri */
+.card-header h5 {
+    margin-bottom: 0;
+}
+
+/* Modal genişliklə */
+.modal-lg {
+    max-width: 800px;
+}
+
+/* Admin panel statistika kartları */
+.display-4 {
+    font-size: 2.5rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+/* Mobil görünüş üçün optimallaşdırma */
+@media (max-width: 768px) {
+    .row {
+        margin-left: -5px;
+        margin-right: -5px;
+    }
+    
+    .col, .col-md-3, .col-md-4, .col-md-6, .col-md-8, .col-md-12 {
+        padding-left: 5px;
+        padding-right: 5px;
+    }
+    
+    .display-4 {
+        font-size: 2rem;
+    }
+    
+    .table {
+        font-size: 0.9rem;
+    }
+    
+    .btn-sm {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.75rem;
+    }
+}
+
+/* İmtahan nəticə rəngləri */
+.table-success {
+    background-color: rgba(25, 135, 84, 0.1);
+}
+
+.table-info {
+    background-color: rgba(13, 202, 240, 0.1);
+}
+
+.table-warning {
+    background-color: rgba(255, 193, 7, 0.1);
+}
+
+.table-danger {
+    background-color: rgba(220, 53, 69, 0.1);
+}
+
+/* Form elementləri */
+.form-control, .form-select {
+    border-radius: 0.25rem;
+}
+
+/* Giriş səhifəsi */
+.login-page {
+    background-color: #f8f9fa;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.login-form {
+    background-color: #ffffff;
+    padding: 2rem;
+    border-radius: 0.5rem;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    max-width: 400px;
+    width: 100%;
+}
+
+.login-form h3 {
+    text-align: center;
+    margin-bottom: 1.5rem;
+}
+
+/* İmtahan səhifəsi */
+.question-card {
+    margin-bottom: 1.5rem;
+}
+
+.question-score {
+    font-size: 1.2rem;
+    font-weight: bold;
+}
+
+.form-check-input:checked + .form-check-label {
+    font-weight: bold;
+}
