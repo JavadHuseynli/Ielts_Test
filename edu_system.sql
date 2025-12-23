@@ -1,5 +1,5 @@
 
-create databse  edu_system;
+CREATE DATABASE IF NOT EXISTS edu_system;
 use  edu_system;
 
 CREATE TABLE `answers` (

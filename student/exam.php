@@ -679,24 +679,111 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['submit_exam'])) {
         box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
     }
     
-    .form-check {
+    /* Material Design Option Cards */
+    .option-card {
         background: white;
-        border: 2px solid #e2e8f0;
-        border-radius: 6px;
-        padding: 1rem;
-        margin-bottom: 0.5rem;
+        border: 2px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 1.25rem;
+        margin-bottom: 0.75rem;
         cursor: pointer;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        position: relative;
+        overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    }
+
+    .option-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(99, 102, 241, 0.05) 100%);
+        opacity: 0;
+        transition: opacity 0.3s ease;
+    }
+
+    .option-card:hover {
+        border-color: #3b82f6;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+    }
+
+    .option-card:hover::before {
+        opacity: 1;
+    }
+
+    .option-card.selected {
+        background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+        border-color: #3b82f6;
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+    }
+
+    .option-card.selected::after {
+        content: '✓';
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+        width: 24px;
+        height: 24px;
+        background: #3b82f6;
+        color: white;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        font-size: 14px;
+    }
+
+    .option-radio {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    .option-label {
+        display: flex;
+        align-items: flex-start;
+        gap: 1rem;
+        position: relative;
+        z-index: 1;
+        padding-right: 2.5rem;
+    }
+
+    .option-indicator {
+        width: 20px;
+        height: 20px;
+        border: 2px solid #94a3b8;
+        border-radius: 50%;
+        flex-shrink: 0;
+        margin-top: 0.25rem;
         transition: all 0.3s ease;
+        position: relative;
+        background: white;
     }
-    
-    .form-check:hover {
-        border-color: #2563eb;
-        background: #eff6ff;
+
+    .option-card:hover .option-indicator {
+        border-color: #3b82f6;
     }
-    
-    .form-check:has(.form-check-input:checked) {
-        background: #eff6ff;
-        border-color: #2563eb;
+
+    .option-card.selected .option-indicator {
+        border-color: #3b82f6;
+        background: #3b82f6;
+    }
+
+    .option-card.selected .option-indicator::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 8px;
+        height: 8px;
+        background: white;
+        border-radius: 50%;
     }
     
     .submit-container {
@@ -870,45 +957,61 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['submit_exam'])) {
                                 ?>
                                     
                                     <?php if (!empty($options['var_a'])): ?>
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="answer[<?php echo $question['id_question_text']; ?>]" 
+                                    <div class="option-card <?php echo $current_answer == 'a' ? 'selected' : ''; ?>" onclick="selectOption(this, 'option_a_<?php echo $question['id_question_text']; ?>')">
+                                        <input class="option-radio" type="radio" name="answer[<?php echo $question['id_question_text']; ?>]"
                                             id="option_a_<?php echo $question['id_question_text']; ?>" value="a"
                                             <?php echo $current_answer == 'a' ? 'checked' : ''; ?>>
-                                        <label class="form-check-label" for="option_a_<?php echo $question['id_question_text']; ?>">
-                                            <strong>A)</strong> <?php echo htmlspecialchars($options['var_a']); ?>
+                                        <label class="option-label" for="option_a_<?php echo $question['id_question_text']; ?>">
+                                            <div class="option-indicator"></div>
+                                            <div class="flex-1">
+                                                <span class="text-lg font-bold text-blue-600 mr-2">A)</span>
+                                                <span class="text-gray-800"><?php echo htmlspecialchars($options['var_a']); ?></span>
+                                            </div>
                                         </label>
                                     </div>
                                     <?php endif; ?>
-                                    
+
                                     <?php if (!empty($options['var_b'])): ?>
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="answer[<?php echo $question['id_question_text']; ?>]" 
+                                    <div class="option-card <?php echo $current_answer == 'b' ? 'selected' : ''; ?>" onclick="selectOption(this, 'option_b_<?php echo $question['id_question_text']; ?>')">
+                                        <input class="option-radio" type="radio" name="answer[<?php echo $question['id_question_text']; ?>]"
                                             id="option_b_<?php echo $question['id_question_text']; ?>" value="b"
                                             <?php echo $current_answer == 'b' ? 'checked' : ''; ?>>
-                                        <label class="form-check-label" for="option_b_<?php echo $question['id_question_text']; ?>">
-                                            <strong>B)</strong> <?php echo htmlspecialchars($options['var_b']); ?>
+                                        <label class="option-label" for="option_b_<?php echo $question['id_question_text']; ?>">
+                                            <div class="option-indicator"></div>
+                                            <div class="flex-1">
+                                                <span class="text-lg font-bold text-blue-600 mr-2">B)</span>
+                                                <span class="text-gray-800"><?php echo htmlspecialchars($options['var_b']); ?></span>
+                                            </div>
                                         </label>
                                     </div>
                                     <?php endif; ?>
-                                    
+
                                     <?php if (!empty($options['var_c'])): ?>
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="answer[<?php echo $question['id_question_text']; ?>]" 
+                                    <div class="option-card <?php echo $current_answer == 'c' ? 'selected' : ''; ?>" onclick="selectOption(this, 'option_c_<?php echo $question['id_question_text']; ?>')">
+                                        <input class="option-radio" type="radio" name="answer[<?php echo $question['id_question_text']; ?>]"
                                             id="option_c_<?php echo $question['id_question_text']; ?>" value="c"
                                             <?php echo $current_answer == 'c' ? 'checked' : ''; ?>>
-                                        <label class="form-check-label" for="option_c_<?php echo $question['id_question_text']; ?>">
-                                            <strong>C)</strong> <?php echo htmlspecialchars($options['var_c']); ?>
+                                        <label class="option-label" for="option_c_<?php echo $question['id_question_text']; ?>">
+                                            <div class="option-indicator"></div>
+                                            <div class="flex-1">
+                                                <span class="text-lg font-bold text-blue-600 mr-2">C)</span>
+                                                <span class="text-gray-800"><?php echo htmlspecialchars($options['var_c']); ?></span>
+                                            </div>
                                         </label>
                                     </div>
                                     <?php endif; ?>
-                                    
+
                                     <?php if (!empty($options['var_d'])): ?>
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="answer[<?php echo $question['id_question_text']; ?>]" 
+                                    <div class="option-card <?php echo $current_answer == 'd' ? 'selected' : ''; ?>" onclick="selectOption(this, 'option_d_<?php echo $question['id_question_text']; ?>')">
+                                        <input class="option-radio" type="radio" name="answer[<?php echo $question['id_question_text']; ?>]"
                                             id="option_d_<?php echo $question['id_question_text']; ?>" value="d"
                                             <?php echo $current_answer == 'd' ? 'checked' : ''; ?>>
-                                        <label class="form-check-label" for="option_d_<?php echo $question['id_question_text']; ?>">
-                                            <strong>D)</strong> <?php echo htmlspecialchars($options['var_d']); ?>
+                                        <label class="option-label" for="option_d_<?php echo $question['id_question_text']; ?>">
+                                            <div class="option-indicator"></div>
+                                            <div class="flex-1">
+                                                <span class="text-lg font-bold text-blue-600 mr-2">D)</span>
+                                                <span class="text-gray-800"><?php echo htmlspecialchars($options['var_d']); ?></span>
+                                            </div>
                                         </label>
                                     </div>
                                     <?php endif; ?>
@@ -1182,6 +1285,22 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['submit_exam'])) {
         }
     }
     
+    // Option selection function for Material Design cards
+    function selectOption(card, radioId) {
+        // Remove selected class from all option cards in the same question group
+        const allCards = card.parentElement.querySelectorAll('.option-card');
+        allCards.forEach(c => c.classList.remove('selected'));
+
+        // Add selected class to clicked card
+        card.classList.add('selected');
+
+        // Check the radio button
+        const radio = document.getElementById(radioId);
+        if (radio) {
+            radio.checked = true;
+        }
+    }
+
     function restartAudio(groupKey) {
         const audio = document.getElementById('mainAudio_' + groupKey);
         if (audio) {

@@ -1,8 +1,8 @@
 <?php
 class Database {
-    private $host = "172.18.250.21:3306";
+    private $host = "localhost";
     private $db_name = "edu_system";
-    private $username = "admins";
+    private $username = "root";
     private $password = "23234455";
     public $conn;
     
