@@ -29,11 +29,11 @@ $stmt->bindParam(":user_id", $user_id);
 $stmt->execute();
 $student = $stmt->fetch(PDO::FETCH_ASSOC);
 
-// Cari (aktiv) imtahanları almaq
+// Cari (aktiv) imtahanları almaq - hem pending hem in_progress
 $query = "SELECT e.id_exam, e.date_exam, e.datetime, s.subjectname, s.timer, e.status
           FROM exams e
           JOIN subjects s ON e.id_subject = s.id_subject
-          WHERE e.id_student_group = :group_id AND e.status = 'in_progress'
+          WHERE e.id_student_group = :group_id AND e.status IN ('pending', 'in_progress')
           ORDER BY e.datetime ASC";
 $stmt = $db->prepare($query);
 $stmt->bindParam(":group_id", $group_id);
@@ -53,24 +53,100 @@ $stmt->execute();
 $upcoming_exams = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Keçmiş imtahan nəticələrini almaq
-$query = "SELECT e.id_exam, e.date_exam, s.subjectname, 
-          COUNT(a.id_answer) as total_questions,
-          SUM(a.is_correct) as correct_answers,
-          SUM(qr.question_score * a.is_correct) as score
-          FROM exams e
-          JOIN subjects s ON e.id_subject = s.id_subject
-          JOIN answers a ON e.id_exam = a.exam_id
-          JOIN question_read qr ON a.id_questions = qr.id_question_text
-          WHERE e.id_student_group = :group_id AND a.user_id = :user_id AND e.status = 'completed'
-          GROUP BY e.id_exam
-          ORDER BY e.datetime DESC
-          LIMIT 5";
+$query = "SELECT
+            sc.id_score,
+            e.id_exam,
+            e.date_exam,
+            sub.subjectname,
+            sc.score as total_score,
+            sc.datetime as submission_date,
+            (SELECT COUNT(*) FROM answers a WHERE a.exam_id = e.id_exam AND a.user_id = sc.user_id) as total_questions,
+            (SELECT SUM(is_correct) FROM answers a WHERE a.exam_id = e.id_exam AND a.user_id = sc.user_id) as correct_answers
+          FROM scores sc
+          JOIN exams e ON sc.exam_id = e.id_exam
+          JOIN subjects sub ON e.id_subject = sub.id_subject
+          WHERE sc.user_id = :user_id
+          ORDER BY sc.datetime DESC
+          LIMIT 10";
 $stmt = $db->prepare($query);
-$stmt->bindParam(":group_id", $group_id);
 $stmt->bindParam(":user_id", $user_id);
 $stmt->execute();
 $exam_results = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
+
+<!-- Success Notification -->
+<?php if (isset($_GET['success']) && $_GET['success'] == '1'): ?>
+<div id="successNotification" class="fixed top-4 right-4 z-50 animate-fade-in-down">
+    <div class="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-6 py-4 rounded-xl shadow-2xl flex items-center space-x-3 max-w-md">
+        <svg class="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+        </svg>
+        <span class="font-semibold">İmtahan uğurla təsdiq edildi! Cavablarınız qeydə alındı.</span>
+        <button onclick="closeNotification()" class="ml-auto hover:bg-white/20 rounded-lg p-1 transition-all">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+        </button>
+    </div>
+</div>
+<?php endif; ?>
+
+<!-- Error Notification - Already Completed -->
+<?php if (isset($_GET['error']) && $_GET['error'] == 'already_completed'): ?>
+<div id="errorNotification" class="fixed top-4 right-4 z-50 animate-fade-in-down">
+    <div class="bg-gradient-to-r from-red-500 to-red-600 text-white px-6 py-4 rounded-xl shadow-2xl flex items-center space-x-3 max-w-md">
+        <svg class="w-6 h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+        </svg>
+        <span class="font-semibold">Siz artıq bu imtahanı təsdiq etmisiniz!</span>
+        <button onclick="closeNotification()" class="ml-auto hover:bg-white/20 rounded-lg p-1 transition-all">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+        </button>
+    </div>
+</div>
+<?php endif; ?>
+
+<style>
+@keyframes fade-in-down {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+.animate-fade-in-down {
+    animation: fade-in-down 0.5s ease-out;
+}
+</style>
+
+<script>
+function closeNotification() {
+    const successNotification = document.getElementById('successNotification');
+    const errorNotification = document.getElementById('errorNotification');
+
+    if (successNotification) {
+        successNotification.style.opacity = '0';
+        successNotification.style.transform = 'translateY(-20px)';
+        setTimeout(() => successNotification.remove(), 300);
+    }
+
+    if (errorNotification) {
+        errorNotification.style.opacity = '0';
+        errorNotification.style.transform = 'translateY(-20px)';
+        setTimeout(() => errorNotification.remove(), 300);
+    }
+}
+
+// Auto-close after 5 seconds
+setTimeout(() => {
+    closeNotification();
+}, 5000);
+</script>
 
 <div class="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 p-4 sm:p-6 lg:p-8">
     <div class="max-w-7xl mx-auto">
@@ -198,19 +274,96 @@ $exam_results = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             <p class="text-gray-500">Hələ imtahan nəticəsi yoxdur</p>
                         </div>
                     <?php else: ?>
-                        <div class="space-y-3">
-                            <?php foreach ($exam_results as $result):
+                        <div class="space-y-4">
+                            <?php
+                            $isFirstResult = true;
+                            foreach ($exam_results as $result):
                                 $total_questions = $result['total_questions'] ?? 0;
                                 $correct_answers = $result['correct_answers'] ?? 0;
-                                $score = $result['score'] ?? 0;
+                                $total_score = $result['total_score'] ?? 0;
+                                $wrong_answers = $total_questions - $correct_answers;
 
                                 $percentage = $total_questions > 0 ? ($correct_answers / $total_questions) * 100 : 0;
-                                $colorClass = $percentage >= 70 ? 'from-green-500 to-emerald-500' : ($percentage >= 50 ? 'from-yellow-500 to-amber-500' : 'from-red-500 to-pink-500');
+                                $colorClass = $percentage >= 70 ? 'green' : ($percentage >= 50 ? 'yellow' : 'red');
+
+                                // İlk nəticə (ən yeni) - BÖYÜK KART
+                                if ($isFirstResult && isset($_GET['success'])):
+                                    $isFirstResult = false;
                             ?>
-                            <div class="border border-gray-200 rounded-xl p-4 hover:border-green-500 hover:bg-green-50 transition-all">
+                            <!-- SON İMTAHAN NƏTİCƏSİ - BÖYÜK KART -->
+                            <div class="relative overflow-hidden rounded-2xl border-2 border-<?php echo $colorClass; ?>-500 bg-gradient-to-br from-<?php echo $colorClass; ?>-50 to-white p-6 shadow-xl">
+                                <!-- Background decoration -->
+                                <div class="absolute top-0 right-0 -mt-4 -mr-4 h-32 w-32 rounded-full bg-<?php echo $colorClass; ?>-200 opacity-20 blur-3xl"></div>
+                                <div class="absolute bottom-0 left-0 -mb-4 -ml-4 h-32 w-32 rounded-full bg-<?php echo $colorClass; ?>-300 opacity-20 blur-3xl"></div>
+
+                                <div class="relative">
+                                    <!-- Badge -->
+                                    <div class="mb-4 inline-flex items-center space-x-2 rounded-full bg-<?php echo $colorClass; ?>-500 px-4 py-2 text-sm font-bold text-white shadow-lg">
+                                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"></path></svg>
+                                        <span>SON NƏTİCƏ</span>
+                                    </div>
+
+                                    <!-- Başlıq -->
+                                    <div class="mb-6 flex items-center justify-between">
+                                        <div>
+                                            <h3 class="text-2xl font-bold text-gray-900"><?php echo htmlspecialchars($result['subjectname']); ?></h3>
+                                            <p class="mt-1 text-sm text-gray-600"><?php echo date('d.m.Y, H:i', strtotime($result['submission_date'])); ?></p>
+                                        </div>
+                                        <div class="flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-<?php echo $colorClass; ?>-500 to-<?php echo $colorClass; ?>-600 shadow-lg">
+                                            <div class="text-center">
+                                                <div class="text-3xl font-bold text-white"><?php echo number_format($percentage, 0); ?>%</div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Statistika -->
+                                    <div class="grid grid-cols-3 gap-4 mb-6">
+                                        <!-- Ümumi suallar -->
+                                        <div class="rounded-xl bg-white p-4 text-center shadow-md border border-gray-200">
+                                            <div class="text-3xl font-bold text-gray-900"><?php echo $total_questions; ?></div>
+                                            <div class="mt-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Ümumi Sual</div>
+                                        </div>
+
+                                        <!-- Düzgün cavablar -->
+                                        <div class="rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 p-4 text-center shadow-md">
+                                            <div class="text-3xl font-bold text-white"><?php echo $correct_answers; ?></div>
+                                            <div class="mt-1 text-xs font-semibold uppercase tracking-wide text-green-100">Düzgün</div>
+                                        </div>
+
+                                        <!-- Səhv cavablar -->
+                                        <div class="rounded-xl bg-gradient-to-br from-red-500 to-pink-600 p-4 text-center shadow-md">
+                                            <div class="text-3xl font-bold text-white"><?php echo $wrong_answers; ?></div>
+                                            <div class="mt-1 text-xs font-semibold uppercase tracking-wide text-red-100">Səhv</div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Bal -->
+                                    <div class="rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 p-4 text-center shadow-lg">
+                                        <div class="text-sm font-semibold uppercase tracking-wide text-indigo-100">Ümumi Bal</div>
+                                        <div class="mt-2 text-4xl font-bold text-white"><?php echo number_format($total_score, 2); ?></div>
+                                    </div>
+
+                                    <!-- Progress bar -->
+                                    <div class="mt-6">
+                                        <div class="mb-2 flex items-center justify-between text-sm font-semibold text-gray-700">
+                                            <span>Uğur dərəcəsi</span>
+                                            <span><?php echo number_format($percentage, 1); ?>%</span>
+                                        </div>
+                                        <div class="h-3 overflow-hidden rounded-full bg-gray-200">
+                                            <div class="h-full rounded-full bg-gradient-to-r from-<?php echo $colorClass; ?>-500 to-<?php echo $colorClass; ?>-600 shadow-sm transition-all duration-500" style="width: <?php echo $percentage; ?>%"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <?php else:
+                                $isFirstResult = false;
+                            ?>
+                            <!-- DİGƏR NƏTİCƏLƏR - KİÇİK KART -->
+                            <div class="border border-gray-200 rounded-xl p-4 hover:border-<?php echo $colorClass; ?>-500 hover:bg-<?php echo $colorClass; ?>-50 transition-all">
                                 <div class="flex items-center justify-between mb-2">
                                     <h3 class="font-bold text-gray-900"><?php echo htmlspecialchars($result['subjectname']); ?></h3>
-                                    <span class="text-xs text-gray-600"><?php echo date('d.m.Y', strtotime($result['date_exam'])); ?></span>
+                                    <span class="text-xs text-gray-600"><?php echo date('d.m.Y', strtotime($result['submission_date'])); ?></span>
                                 </div>
                                 <div class="flex items-center justify-between">
                                     <div class="flex items-center space-x-4 text-sm">
@@ -218,14 +371,15 @@ $exam_results = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                             <span class="font-bold text-gray-900"><?php echo $correct_answers; ?></span> / <?php echo $total_questions; ?> düzgün
                                         </span>
                                         <span class="text-gray-600">
-                                            Bal: <span class="font-bold text-gray-900"><?php echo number_format($score, 2); ?></span>
+                                            Bal: <span class="font-bold text-gray-900"><?php echo number_format($total_score, 2); ?></span>
                                         </span>
                                     </div>
-                                    <div class="px-3 py-1 bg-gradient-to-r <?php echo $colorClass; ?> text-white rounded-lg text-sm font-bold">
+                                    <div class="px-3 py-1 bg-gradient-to-r from-<?php echo $colorClass; ?>-500 to-<?php echo $colorClass; ?>-600 text-white rounded-lg text-sm font-bold">
                                         <?php echo number_format($percentage, 0); ?>%
                                     </div>
                                 </div>
                             </div>
+                            <?php endif; ?>
                             <?php endforeach; ?>
                         </div>
                     <?php endif; ?>

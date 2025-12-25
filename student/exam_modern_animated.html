@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="az" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IELTS Examination Platform</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    animation: {
+                        'fade-in': 'fadeIn 0.5s ease-in-out',
+                        'slide-up': 'slideUp 0.4s ease-out',
+                        'slide-in-right': 'slideInRight 0.4s ease-out',
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'bounce-slow': 'bounce 2s infinite',
+                        'ping-slow': 'ping 2s cubic-bezier(0, 0, 0.2, 1) infinite',
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        },
+                        slideUp: {
+                            '0%': { transform: 'translateY(20px)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' },
+                        },
+                        slideInRight: {
+                            '0%': { transform: 'translateX(20px)', opacity: '0' },
+                            '100%': { transform: 'translateX(0)', opacity: '1' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');
+
+        * {
+            font-family: 'Poppins', sans-serif;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        /* Glassmorphism Effect */
+        .glass {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+
+        /* Gradient Text */
+        .gradient-text {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        /* Radio Button Animation */
+        .radio-option {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .radio-option::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(99, 102, 241, 0.1);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+
+        .radio-option:hover::before {
+            width: 300px;
+            height: 300px;
+        }
+
+        .radio-option input[type="radio"]:checked + .radio-circle {
+            border-color: #6366f1;
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.2);
+        }
+
+        .radio-option input[type="radio"]:checked + .radio-circle::after {
+            transform: translate(-50%, -50%) scale(1);
+            opacity: 1;
+        }
+
+        .radio-circle::after {
+            content: '';
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            background: white;
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0);
+            opacity: 0;
+            transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        }
+
+        /* Question Nav Animation */
+        .question-nav-item {
+            transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            position: relative;
+        }
+
+        .question-nav-item::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 50%;
+            width: 0;
+            height: 2px;
+            background: linear-gradient(90deg, #6366f1, #8b5cf6);
+            transform: translateX(-50%);
+            transition: width 0.3s ease;
+        }
+
+        .question-nav-item:hover::after {
+            width: 80%;
+        }
+
+        .question-nav-item.answered {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);
+        }
+
+        .question-nav-item.current {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            color: white;
+            transform: scale(1.1);
+            box-shadow: 0 8px 25px rgba(99, 102, 241, 0.5);
+        }
+
+        /* Floating Animation */
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+
+        .float {
+            animation: float 3s ease-in-out infinite;
+        }
+
+        /* Progress Bar */
+        .progress-bar {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .progress-bar::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+            animation: shimmer 2s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+    </style>
+</head>
+
+<body class="bg-gradient-to-br from-slate-50 via-purple-50 to-blue-50 min-h-screen">
+
+    <!-- Animated Background Shapes -->
+    <div class="fixed inset-0 overflow-hidden pointer-events-none">
+        <div class="absolute top-20 left-10 w-72 h-72 bg-purple-300 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse-slow"></div>
+        <div class="absolute top-40 right-10 w-72 h-72 bg-blue-300 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse-slow animation-delay-2000"></div>
+        <div class="absolute bottom-20 left-1/3 w-72 h-72 bg-pink-300 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse-slow animation-delay-4000"></div>
+    </div>
+
+    <!-- Top Navigation Bar -->
+    <nav class="glass border-b border-white/20 backdrop-blur-lg sticky top-0 z-50 shadow-lg animate-slide-up">
+        <div class="max-w-7xl mx-auto px-6 py-4">
+            <div class="flex items-center justify-between">
+                <!-- Logo -->
+                <div class="flex items-center gap-3 group">
+                    <div class="w-12 h-12 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
+                        <i class="fas fa-graduation-cap text-white text-xl"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-xl font-bold gradient-text">IELTS Platform</h1>
+                        <p class="text-xs text-gray-500">Excellence in Testing</p>
+                    </div>
+                </div>
+
+                <!-- Timer & Progress -->
+                <div class="flex items-center gap-6">
+                    <!-- Progress -->
+                    <div class="hidden md:block">
+                        <div class="text-xs text-gray-500 mb-1">Progress</div>
+                        <div class="flex items-center gap-2">
+                            <div class="w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
+                                <div class="h-full bg-gradient-to-r from-indigo-600 to-purple-600 rounded-full progress-bar" style="width: 30%"></div>
+                            </div>
+                            <span class="text-sm font-semibold text-gray-700">2/15</span>
+                        </div>
+                    </div>
+
+                    <!-- Timer -->
+                    <div class="flex items-center gap-3 px-4 py-2 bg-gradient-to-r from-orange-500 to-red-500 rounded-xl shadow-lg text-white">
+                        <i class="fas fa-clock animate-pulse"></i>
+                        <div class="font-bold text-lg tracking-wider">29:45</div>
+                    </div>
+
+                    <!-- User -->
+                    <div class="flex items-center gap-3 group cursor-pointer">
+                        <div class="text-right hidden sm:block">
+                            <div class="text-sm font-semibold text-gray-700">Javad Allahyarov</div>
+                            <div class="text-xs text-gray-500">Student ID: 2024001</div>
+                        </div>
+                        <div class="w-12 h-12 bg-gradient-to-br from-blue-600 to-cyan-600 rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
+                            <i class="fas fa-user text-white"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="max-w-7xl mx-auto px-6 py-8">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[calc(100vh-200px)]">
+
+            <!-- Left Panel - Material -->
+            <div class="glass rounded-3xl shadow-2xl border border-white/30 overflow-hidden animate-fade-in flex flex-col">
+
+                <!-- Section Tabs -->
+                <div class="flex border-b border-gray-200 bg-white/50 backdrop-blur-sm">
+                    <button class="flex-1 px-6 py-4 font-semibold text-indigo-600 border-b-3 border-indigo-600 bg-white/80 transition-all duration-300 hover:bg-white">
+                        <i class="fas fa-book-open mr-2"></i>Reading
+                        <span class="ml-2 px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full text-xs">1-10</span>
+                    </button>
+                    <button class="flex-1 px-6 py-4 font-semibold text-gray-500 hover:text-gray-700 hover:bg-white/50 transition-all duration-300">
+                        <i class="fas fa-headphones mr-2"></i>Listening
+                        <span class="ml-2 px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs">11-15</span>
+                    </button>
+                </div>
+
+                <!-- Content Area -->
+                <div class="flex-1 overflow-y-auto p-8 animate-slide-up">
+                    <div class="prose prose-lg max-w-none">
+                        <!-- Title -->
+                        <div class="mb-8">
+                            <div class="inline-block px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-full text-sm font-semibold mb-4 shadow-lg">
+                                Passage 1
+                            </div>
+                            <h2 class="text-3xl font-bold text-gray-800 mb-2">The Industrial Revolution</h2>
+                            <div class="flex items-center gap-4 text-sm text-gray-500">
+                                <span><i class="fas fa-clock mr-1"></i>Reading Time: 20 min</span>
+                                <span><i class="fas fa-align-left mr-1"></i>650 words</span>
+                            </div>
+                        </div>
+
+                        <!-- Paragraphs -->
+                        <div class="space-y-4 text-gray-700 leading-relaxed">
+                            <p class="hover:bg-indigo-50 p-3 rounded-lg transition-all duration-300">
+                                The Industrial Revolution was a period of major industrialization and innovation
+                                that took place during the late 1700s and early 1800s. The Industrial Revolution
+                                began in Great Britain and quickly spread throughout the world.
+                            </p>
+
+                            <p class="hover:bg-indigo-50 p-3 rounded-lg transition-all duration-300">
+                                The American Industrial Revolution, commonly referred to as the Second Industrial
+                                Revolution, started sometime between 1820 and 1870. This period saw the
+                                mechanization of agriculture and textile manufacturing and a revolution in power,
+                                including steamships and railroads, that affected social, cultural and economic
+                                conditions.
+                            </p>
+
+                            <p class="hover:bg-indigo-50 p-3 rounded-lg transition-all duration-300">
+                                Though the United States borrowed significantly from Europe's technological
+                                advancements during the Industrial Revolution, American inventors contributed to
+                                this international period of economic and industrial growth. The inventors and
+                                innovations of this time period changed the world forever.
+                            </p>
+
+                            <p class="hover:bg-indigo-50 p-3 rounded-lg transition-all duration-300">
+                                Before the Industrial Revolution, people wove textiles by hand. Beginning in the
+                                middle 1700s, machines did this and other jobs as well. The Industrial Revolution
+                                started in England and spread to the rest of Europe and the United States.
+                            </p>
+                        </div>
+
+                        <!-- Tools -->
+                        <div class="mt-8 flex gap-3">
+                            <button class="px-4 py-2 bg-white rounded-xl shadow-md hover:shadow-lg transition-all duration-300 text-gray-700 hover:bg-gray-50">
+                                <i class="fas fa-highlighter mr-2"></i>Highlight
+                            </button>
+                            <button class="px-4 py-2 bg-white rounded-xl shadow-md hover:shadow-lg transition-all duration-300 text-gray-700 hover:bg-gray-50">
+                                <i class="fas fa-sticky-note mr-2"></i>Note
+                            </button>
+                            <button class="px-4 py-2 bg-white rounded-xl shadow-md hover:shadow-lg transition-all duration-300 text-gray-700 hover:bg-gray-50">
+                                <i class="fas fa-text-height mr-2"></i>Text Size
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel - Question -->
+            <div class="glass rounded-3xl shadow-2xl border border-white/30 overflow-hidden animate-slide-in-right flex flex-col">
+
+                <!-- Question Header -->
+                <div class="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 px-8 py-6 text-white">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-sm font-medium opacity-90">Question 1 of 15</span>
+                        <div class="flex items-center gap-2">
+                            <div class="px-3 py-1 bg-white/20 rounded-full text-sm font-semibold backdrop-blur-sm">
+                                Reading
+                            </div>
+                            <div class="px-3 py-1 bg-white/20 rounded-full text-sm font-semibold backdrop-blur-sm">
+                                1 Point
+                            </div>
+                        </div>
+                    </div>
+                    <h3 class="text-xl font-bold">
+                        When did the Industrial Revolution begin in Great Britain?
+                    </h3>
+                </div>
+
+                <!-- Answer Options -->
+                <div class="flex-1 overflow-y-auto p-8">
+                    <div class="space-y-4">
+
+                        <label class="radio-option flex items-start gap-4 p-5 rounded-2xl border-2 border-gray-200 cursor-pointer hover:border-indigo-400 hover:shadow-xl transition-all duration-300 group">
+                            <input type="radio" name="answer" value="a" class="hidden">
+                            <div class="radio-circle relative w-6 h-6 border-2 border-gray-300 rounded-full flex-shrink-0 mt-0.5 transition-all duration-300"></div>
+                            <div class="flex-1">
+                                <div class="font-semibold text-indigo-600 mb-1">A</div>
+                                <div class="text-gray-700 group-hover:text-gray-900 transition-colors">Early 1700s</div>
+                            </div>
+                            <div class="opacity-0 group-hover:opacity-100 transition-opacity">
+                                <i class="fas fa-arrow-right text-indigo-600"></i>
+                            </div>
+                        </label>
+
+                        <label class="radio-option flex items-start gap-4 p-5 rounded-2xl border-2 border-gray-200 cursor-pointer hover:border-indigo-400 hover:shadow-xl transition-all duration-300 group">
+                            <input type="radio" name="answer" value="b" class="hidden">
+                            <div class="radio-circle relative w-6 h-6 border-2 border-gray-300 rounded-full flex-shrink-0 mt-0.5 transition-all duration-300"></div>
+                            <div class="flex-1">
+                                <div class="font-semibold text-indigo-600 mb-1">B</div>
+                                <div class="text-gray-700 group-hover:text-gray-900 transition-colors">Late 1700s and early 1800s</div>
+                            </div>
+                            <div class="opacity-0 group-hover:opacity-100 transition-opacity">
+                                <i class="fas fa-arrow-right text-indigo-600"></i>
+                            </div>
+                        </label>
+
+                        <label class="radio-option flex items-start gap-4 p-5 rounded-2xl border-2 border-gray-200 cursor-pointer hover:border-indigo-400 hover:shadow-xl transition-all duration-300 group">
+                            <input type="radio" name="answer" value="c" class="hidden">
+                            <div class="radio-circle relative w-6 h-6 border-2 border-gray-300 rounded-full flex-shrink-0 mt-0.5 transition-all duration-300"></div>
+                            <div class="flex-1">
+                                <div class="font-semibold text-indigo-600 mb-1">C</div>
+                                <div class="text-gray-700 group-hover:text-gray-900 transition-colors">Between 1820 and 1870</div>
+                            </div>
+                            <div class="opacity-0 group-hover:opacity-100 transition-opacity">
+                                <i class="fas fa-arrow-right text-indigo-600"></i>
+                            </div>
+                        </label>
+
+                        <label class="radio-option flex items-start gap-4 p-5 rounded-2xl border-2 border-gray-200 cursor-pointer hover:border-indigo-400 hover:shadow-xl transition-all duration-300 group">
+                            <input type="radio" name="answer" value="d" class="hidden">
+                            <div class="radio-circle relative w-6 h-6 border-2 border-gray-300 rounded-full flex-shrink-0 mt-0.5 transition-all duration-300"></div>
+                            <div class="flex-1">
+                                <div class="font-semibold text-indigo-600 mb-1">D</div>
+                                <div class="text-gray-700 group-hover:text-gray-900 transition-colors">Middle 1700s</div>
+                            </div>
+                            <div class="opacity-0 group-hover:opacity-100 transition-opacity">
+                                <i class="fas fa-arrow-right text-indigo-600"></i>
+                            </div>
+                        </label>
+
+                    </div>
+
+                    <!-- Navigation Buttons -->
+                    <div class="grid grid-cols-2 gap-4 mt-8">
+                        <button class="px-6 py-4 bg-white border-2 border-gray-200 rounded-2xl font-semibold text-gray-700 hover:border-gray-300 hover:shadow-xl transition-all duration-300 group">
+                            <i class="fas fa-arrow-left mr-2 group-hover:-translate-x-1 transition-transform"></i>
+                            Previous
+                        </button>
+                        <button class="px-6 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl font-semibold text-white hover:shadow-2xl hover:scale-105 transition-all duration-300 group">
+                            Next
+                            <i class="fas fa-arrow-right ml-2 group-hover:translate-x-1 transition-transform"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Question Navigation Panel -->
+                <div class="border-t border-gray-200 bg-white/50 backdrop-blur-sm p-6">
+                    <div class="mb-4">
+                        <div class="flex items-center justify-between mb-3">
+                            <h4 class="font-bold text-gray-800 flex items-center gap-2">
+                                <i class="fas fa-list-check"></i>
+                                Questions Navigator
+                            </h4>
+                            <div class="flex gap-3 text-xs">
+                                <div class="flex items-center gap-1.5">
+                                    <div class="w-3 h-3 bg-gradient-to-br from-green-500 to-green-600 rounded-full shadow"></div>
+                                    <span class="text-gray-600">Done</span>
+                                </div>
+                                <div class="flex items-center gap-1.5">
+                                    <div class="w-3 h-3 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-full shadow"></div>
+                                    <span class="text-gray-600">Current</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Reading Questions -->
+                    <div class="mb-4">
+                        <div class="text-xs font-semibold text-gray-500 mb-2 flex items-center gap-2">
+                            <i class="fas fa-book-open text-indigo-600"></i>
+                            READING (1-10)
+                        </div>
+                        <div class="grid grid-cols-10 gap-2">
+                            <button class="question-nav-item current w-10 h-10 rounded-xl font-bold text-sm shadow-lg">1</button>
+                            <button class="question-nav-item answered w-10 h-10 rounded-xl font-bold text-sm shadow-lg">2</button>
+                            <button class="question-nav-item w-10 h-10 rounded-xl font-bold text-sm bg-white hover:shadow-lg hover:scale-110">3</button>
+                            <button class="question-nav-item w-10 h-10 rounded-xl font-bold text-sm bg-white hover:shadow-lg hover:scale-110">4</button>
+                            <button class="question-nav-item w-10 h-10 rounded-xl font-bold text-sm bg-white hover:shadow-lg hover:scale-110">5</button>
+                            <button class="question-nav-item w-10 h-10 rounded-xl font-bold text-sm bg-white hover:shadow-lg hover:scale-110">6</button>
+                            <button class="question-nav-item w-10 h-10 rounded-xl font-bold text-sm bg-white hover:shadow-lg hover:scale-110">7</button>
+                            <button class="question-nav-item w-10 h-10 rounded-xl font-bold text-sm bg-white hover:shadow-lg hover:scale-110">8</button>
+                            <button class="question-nav-item w-10 h-10 rounded-xl font-bold text-sm bg-white hover:shadow-lg hover:scale-110">9</button>
+                            <button class="question-nav-item w-10 h-10 rounded-xl font-bold text-sm bg-white hover:shadow-lg hover:scale-110">10</button>
+                        </div>
+                    </div>
+
+                    <!-- Listening Questions -->
+                    <div class="mb-4">
+                        <div class="text-xs font-semibold text-gray-500 mb-2 flex items-center gap-2">
+                            <i class="fas fa-headphones text-purple-600"></i>
+                            LISTENING (11-15)
+                        </div>
+                        <div class="grid grid-cols-10 gap-2">
+                            <button class="question-nav-item w-10 h-10 rounded-xl font-bold text-sm bg-white hover:shadow-lg hover:scale-110">11</button>
+                            <button class="question-nav-item w-10 h-10 rounded-xl font-bold text-sm bg-white hover:shadow-lg hover:scale-110">12</button>
+                            <button class="question-nav-item w-10 h-10 rounded-xl font-bold text-sm bg-white hover:shadow-lg hover:scale-110">13</button>
+                            <button class="question-nav-item w-10 h-10 rounded-xl font-bold text-sm bg-white hover:shadow-lg hover:scale-110">14</button>
+                            <button class="question-nav-item w-10 h-10 rounded-xl font-bold text-sm bg-white hover:shadow-lg hover:scale-110">15</button>
+                        </div>
+                    </div>
+
+                    <!-- Submit Button -->
+                    <button class="w-full py-4 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-2xl font-bold text-lg hover:shadow-2xl hover:scale-105 transition-all duration-300 group relative overflow-hidden">
+                        <span class="relative z-10 flex items-center justify-center gap-2">
+                            <i class="fas fa-check-circle text-xl"></i>
+                            Submit Examination
+                        </span>
+                        <div class="absolute inset-0 bg-gradient-to-r from-green-600 to-emerald-700 transform translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
+                    </button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // Radio button selection with animation
+        document.querySelectorAll('.radio-option').forEach(option => {
+            option.addEventListener('click', function() {
+                // Remove checked from all in same group
+                const radioName = this.querySelector('input').name;
+                document.querySelectorAll(`input[name="${radioName}"]`).forEach(radio => {
+                    radio.checked = false;
+                });
+
+                // Check this one
+                const radio = this.querySelector('input[type="radio"]');
+                radio.checked = true;
+
+                // Mark current question as answered
+                const currentNav = document.querySelector('.question-nav-item.current');
+                if (currentNav && !currentNav.classList.contains('answered')) {
+                    currentNav.classList.add('answered');
+
+                    // Add success animation
+                    currentNav.style.animation = 'bounce 0.6s ease';
+                    setTimeout(() => {
+                        currentNav.style.animation = '';
+                    }, 600);
+                }
+            });
+        });
+
+        // Question navigation
+        document.querySelectorAll('.question-nav-item').forEach((btn, index) => {
+            btn.addEventListener('click', function() {
+                // Remove current from all
+                document.querySelectorAll('.question-nav-item').forEach(b => {
+                    b.classList.remove('current');
+                });
+
+                // Add current to clicked
+                this.classList.add('current');
+
+                // TODO: Load question data
+                console.log('Loading question', index + 1);
+            });
+        });
+
+        // Add floating animation to logo on hover
+        document.querySelector('.fa-graduation-cap').addEventListener('mouseenter', function() {
+            this.classList.add('float');
+        });
+
+        document.querySelector('.fa-graduation-cap').addEventListener('mouseleave', function() {
+            this.classList.remove('float');
+        });
+    </script>
+
+</body>
+</html>

@@ -1,0 +1,198 @@
+# ===================================
+# IELTS Test System - Apache Configuration
+# ===================================
+
+# Enable Rewrite Engine
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /
+
+    # Force HTTPS (uncomment if needed)
+    # RewriteCond %{HTTPS} off
+    # RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+    # Remove trailing slash
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_URI} (.+)/$
+    RewriteRule ^ %1 [R=301,L]
+</IfModule>
+
+# ===================================
+# PHP Configuration
+# ===================================
+
+# File Upload Settings
+php_value upload_max_filesize 25M
+php_value post_max_size 30M
+php_value max_execution_time 300
+php_value max_input_time 300
+php_value memory_limit 256M
+
+# Session Settings
+php_value session.gc_maxlifetime 7200
+php_value session.cookie_lifetime 0
+
+# Error Handling
+php_flag display_errors Off
+php_flag log_errors On
+php_value error_log error_log.txt
+
+# ===================================
+# Security Headers
+# ===================================
+
+<IfModule mod_headers.c>
+    # Prevent MIME type sniffing
+    Header set X-Content-Type-Options "nosniff"
+
+    # Prevent clickjacking
+    Header set X-Frame-Options "SAMEORIGIN"
+
+    # XSS Protection
+    Header set X-XSS-Protection "1; mode=block"
+
+    # Referrer Policy
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+
+    # Cache Control for PHP files
+    <FilesMatch "\.(php)$">
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+        Header set Pragma "no-cache"
+        Header set Expires "0"
+    </FilesMatch>
+
+    # Cache Control for static assets
+    <FilesMatch "\.(css|js|jpg|jpeg|png|gif|ico|svg|woff|woff2|ttf|eot)$">
+        Header set Cache-Control "max-age=31536000, public"
+    </FilesMatch>
+</IfModule>
+
+# ===================================
+# MIME Types
+# ===================================
+
+<IfModule mod_mime.c>
+    # Audio
+    AddType audio/mpeg .mp3
+    AddType audio/mp4 .m4a
+    AddType audio/ogg .ogg
+    AddType audio/wav .wav
+
+    # Video
+    AddType video/mp4 .mp4
+    AddType video/webm .webm
+
+    # Fonts
+    AddType application/font-woff .woff
+    AddType application/font-woff2 .woff2
+    AddType application/vnd.ms-fontobject .eot
+    AddType application/x-font-ttf .ttf
+
+    # Images
+    AddType image/svg+xml .svg
+    AddType image/webp .webp
+
+    # Documents
+    AddType application/json .json
+    AddType text/plain .txt
+</IfModule>
+
+# ===================================
+# Compression
+# ===================================
+
+<IfModule mod_deflate.c>
+    # Compress HTML, CSS, JavaScript, Text, XML
+    AddOutputFilterByType DEFLATE text/html
+    AddOutputFilterByType DEFLATE text/css
+    AddOutputFilterByType DEFLATE text/javascript
+    AddOutputFilterByType DEFLATE application/javascript
+    AddOutputFilterByType DEFLATE application/x-javascript
+    AddOutputFilterByType DEFLATE text/xml
+    AddOutputFilterByType DEFLATE application/xml
+    AddOutputFilterByType DEFLATE application/json
+    AddOutputFilterByType DEFLATE text/plain
+    AddOutputFilterByType DEFLATE image/svg+xml
+
+    # Don't compress images, audio, video
+    SetEnvIfNoCase Request_URI \.(?:gif|jpe?g|png|mp3|mp4|wav|ogg|webm)$ no-gzip dont-vary
+</IfModule>
+
+# ===================================
+# File Access Control
+# ===================================
+
+# Deny access to sensitive files
+<FilesMatch "^\.">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Protect configuration files
+<FilesMatch "\.(env|ini|log|conf|htaccess|htpasswd|bak|sql)$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Protect includes directory
+<IfModule mod_rewrite.c>
+    RewriteRule ^includes/.*$ - [F,L]
+</IfModule>
+
+# ===================================
+# Directory Options
+# ===================================
+
+# Disable directory browsing
+Options -Indexes
+
+# Follow symbolic links
+Options +FollowSymLinks
+
+# Default charset
+AddDefaultCharset UTF-8
+
+# ===================================
+# Error Pages (Optional)
+# ===================================
+
+# Uncomment to use custom error pages
+# ErrorDocument 400 /error/400.php
+# ErrorDocument 401 /error/401.php
+# ErrorDocument 403 /error/403.php
+# ErrorDocument 404 /error/404.php
+# ErrorDocument 500 /error/500.php
+# ErrorDocument 503 /error/503.php
+
+# ===================================
+# Performance Optimization
+# ===================================
+
+# Enable Keep-Alive
+<IfModule mod_headers.c>
+    Header set Connection keep-alive
+</IfModule>
+
+# Set ETags
+FileETag MTime Size
+
+# ===================================
+# Allow CORS for Audio Files (if needed)
+# ===================================
+
+<IfModule mod_headers.c>
+    <FilesMatch "\.(mp3|wav|ogg|m4a)$">
+        Header set Access-Control-Allow-Origin "*"
+    </FilesMatch>
+</IfModule>
+
+# ===================================
+# Prevent Hotlinking (Optional)
+# ===================================
+
+# Uncomment to prevent hotlinking of media files
+# <IfModule mod_rewrite.c>
+#     RewriteCond %{HTTP_REFERER} !^$
+#     RewriteCond %{HTTP_REFERER} !^https?://(www\.)?yourdomain\.com [NC]
+#     RewriteRule \.(jpg|jpeg|png|gif|mp3|mp4|wav)$ - [F,NC,L]
+# </IfModule>
