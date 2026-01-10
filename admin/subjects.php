@@ -10,7 +10,7 @@ if (!is_admin() && !is_kafedra() && !is_teacher()) {
     exit();
 }
 
-$teacher_subject_id = is_teacher() && isset($_SESSION['subject_id']) ? $_SESSION['subject_id'] : null;
+$teacher_subject_ids = is_teacher() && isset($_SESSION['teacher_subjects']) ? $_SESSION['teacher_subjects'] : [];
 
 $pageTitle = "Fənn İdarəetməsi";
 include_once "../includes/header.php";
@@ -107,12 +107,15 @@ $offset = ($page - 1) * $items_per_page;
 
 // Get total count
 $count_query = "SELECT COUNT(DISTINCT s.id_subject) as total FROM subjects s";
-if ($teacher_subject_id) {
-    $count_query .= " WHERE s.id_subject = :teacher_subject_id";
+if (!empty($teacher_subject_ids)) {
+    $placeholders = implode(',', array_fill(0, count($teacher_subject_ids), '?'));
+    $count_query .= " WHERE s.id_subject IN ($placeholders)";
 }
 $count_stmt = $db->prepare($count_query);
-if ($teacher_subject_id) {
-    $count_stmt->bindParam(':teacher_subject_id', $teacher_subject_id);
+if (!empty($teacher_subject_ids)) {
+    foreach ($teacher_subject_ids as $index => $subject_id) {
+        $count_stmt->bindValue($index + 1, $subject_id, PDO::PARAM_INT);
+    }
 }
 $count_stmt->execute();
 $total_subjects = $count_stmt->fetch(PDO::FETCH_ASSOC)['total'];
@@ -127,18 +130,22 @@ $query = "SELECT s.id_subject, s.subjectname, s.timer,
           LEFT JOIN question_files qf ON s.id_subject = qf.subject_id
           LEFT JOIN question_read qr ON qf.id_read_quest_file = qr.id_read_quest_file
           LEFT JOIN exams e ON s.id_subject = e.id_subject";
-if ($teacher_subject_id) {
-    $query .= " WHERE s.id_subject = :teacher_subject_id";
+if (!empty($teacher_subject_ids)) {
+    $placeholders = implode(',', array_fill(0, count($teacher_subject_ids), '?'));
+    $query .= " WHERE s.id_subject IN ($placeholders)";
 }
 $query .= " GROUP BY s.id_subject
           ORDER BY s.subjectname
-          LIMIT :limit OFFSET :offset";
+          LIMIT ? OFFSET ?";
 $stmt = $db->prepare($query);
-if ($teacher_subject_id) {
-    $stmt->bindParam(':teacher_subject_id', $teacher_subject_id);
+$param_index = 1;
+if (!empty($teacher_subject_ids)) {
+    foreach ($teacher_subject_ids as $subject_id) {
+        $stmt->bindValue($param_index++, $subject_id, PDO::PARAM_INT);
+    }
 }
-$stmt->bindParam(':limit', $items_per_page, PDO::PARAM_INT);
-$stmt->bindParam(':offset', $offset, PDO::PARAM_INT);
+$stmt->bindValue($param_index++, $items_per_page, PDO::PARAM_INT);
+$stmt->bindValue($param_index++, $offset, PDO::PARAM_INT);
 $stmt->execute();
 $subjects = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -151,12 +158,15 @@ $totals_query = "SELECT
     LEFT JOIN question_files qf ON s.id_subject = qf.subject_id
     LEFT JOIN question_read qr ON qf.id_read_quest_file = qr.id_read_quest_file
     LEFT JOIN exams e ON s.id_subject = e.id_subject";
-if ($teacher_subject_id) {
-    $totals_query .= " WHERE s.id_subject = :teacher_subject_id";
+if (!empty($teacher_subject_ids)) {
+    $placeholders = implode(',', array_fill(0, count($teacher_subject_ids), '?'));
+    $totals_query .= " WHERE s.id_subject IN ($placeholders)";
 }
 $totals_stmt = $db->prepare($totals_query);
-if ($teacher_subject_id) {
-    $totals_stmt->bindParam(':teacher_subject_id', $teacher_subject_id);
+if (!empty($teacher_subject_ids)) {
+    foreach ($teacher_subject_ids as $index => $subject_id) {
+        $totals_stmt->bindValue($index + 1, $subject_id, PDO::PARAM_INT);
+    }
 }
 $totals_stmt->execute();
 $totals = $totals_stmt->fetch(PDO::FETCH_ASSOC);

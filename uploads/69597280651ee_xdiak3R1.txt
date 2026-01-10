@@ -1,0 +1,27 @@
+Web Design vs. Web Development
+Web design and web development are two different, but closely related fields. Both play an important
+role in creating websites, but they involve different skills and tasks.
+Web Design: Web design is all about how a website looks. Web designers focus on the layout, colors,
+fonts, and images that make up the website&#39;s appearance. They use software like Adobe Photoshop or
+Sketch to create the design. A web designer’s goal is to make the website easy to use and visually
+appealing.Some of the key tasks of a web designer include:
+ Designing the layout of the website.
+ Choosing the right colors and fonts.
+ Making sure the website is easy to navigate.
+ Creating logos and images for the site.
+ Ensuring the website is mobile-friendly.
+Web Development: Web development is the process of building the website. Web developers focus on
+the functionality of the website. They use programming languages like HTML, CSS, JavaScript, and
+
+PHP to make the website work. Developers ensure that the website functions correctly, loads quickly,
+and has no errors.
+There are two main types of web development:
+1. Front-end Development: This is the part of the website that users see and interact with. It
+includes everything from buttons to the layout of the page. Front-end developers use languages
+like HTML, CSS, and JavaScript.
+2. Back-end Development: This is the server-side of the website, where all the data is stored and
+managed. Back-end developers use languages like PHP, Ruby, and Python to make the website
+run smoothly.
+Conclusion: In simple terms, web designers focus on the look and feel of the website, while web
+developers focus on making sure the website works. Both are important, and they often work together
+to create a website that is both beautiful and functional.

@@ -66,9 +66,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['login'])) {
 
         .material-input input:focus {
             outline: none;
-            border-color: #6366f1;
+            border-color: #9333ea;
             background-color: white;
-            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
+            box-shadow: 0 0 0 4px rgba(147, 51, 234, 0.1);
         }
 
         .material-input label {
@@ -86,7 +86,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['login'])) {
             top: -10px;
             left: 12px;
             font-size: 12px;
-            color: #6366f1;
+            color: #9333ea;
             background: white;
             padding: 0 6px;
             font-weight: 600;
@@ -101,13 +101,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['login'])) {
         }
 
         .material-input input:focus ~ .icon {
-            color: #6366f1;
+            color: #9333ea;
         }
 
         .material-button {
             position: relative;
             overflow: hidden;
-            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            background: linear-gradient(135deg, #7c3aed 0%, #9333ea 100%);
             color: white;
             border: none;
             border-radius: 12px;
@@ -117,12 +117,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['login'])) {
             cursor: pointer;
             transition: all 0.3s ease;
             width: 100%;
-            box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+            box-shadow: 0 4px 14px rgba(147, 51, 234, 0.4);
         }
 
         .material-button:hover {
             transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5);
+            box-shadow: 0 6px 20px rgba(147, 51, 234, 0.5);
         }
 
         .material-button:active {
@@ -155,7 +155,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['login'])) {
         }
 
         .gradient-bg {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: #ffffff;
             min-height: 100vh;
             display: flex;
             align-items: center;
@@ -229,16 +229,16 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['login'])) {
                 <!-- Logo and Title -->
                 <div class="text-center mb-8 logo-container">
                     <div class="flex justify-center mb-6">
-                        <img src="images/logobbu.jpg" alt="BBU Logo" class="w-32 h-32 rounded-full shadow-2xl border-4 border-white">
+                        <img src="image_loader.php?file=logo_bbu.jpg" alt="BBU Logo" class="w-32 h-32 rounded-full shadow-2xl border-4 border-white">
                     </div>
-                    <h1 class="text-4xl font-bold text-white mb-2">İngilis Dili Test Sistemi</h1>
-                    <p class="text-xl text-indigo-100 font-semibold tracking-wider">ETS</p>
-                    <div class="w-20 h-1 bg-white mx-auto mt-4 rounded-full"></div>
+                    <h1 class="text-4xl font-bold text-purple-900 mb-2">İngilis Dili Test Sistemi</h1>
+                    <p class="text-xl text-purple-700 font-semibold tracking-wider">ETS</p>
+                    <div class="w-20 h-1 bg-purple-600 mx-auto mt-4 rounded-full"></div>
                 </div>
 
                 <!-- Login Card -->
                 <div class="glass-card rounded-3xl p-8 shadow-2xl form-container">
-                    <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">ETS</h2>
+                    <h2 class="text-2xl font-bold text-purple-900 mb-6 text-center">ETS</h2>
 
                     <?php if($loginError): ?>
                         <div class="bg-red-50 border-l-4 border-red-500 p-4 mb-6 rounded-lg">
@@ -296,12 +296,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['login'])) {
 
                 <!-- Copyright -->
                 <div class="text-center mt-6">
-                    <p class="text-white text-sm opacity-80 mb-2">
+                    <p class="text-gray-700 text-sm mb-2">
                         © <?php echo date('Y'); ?> Bakı Biznes Universiteti. Bütün hüquqlar qorunur.
                     </p>
-                    <p class="text-white text-xs opacity-70">
+                    <p class="text-gray-600 text-xs">
                         Qurucu:
-                        <a href="https://javadhuseynli.github.io" target="_blank" class="font-semibold hover:text-indigo-200 transition-colors duration-300 underline decoration-dotted">
+                        <a href="https://javadhuseynli.github.io" target="_blank" class="font-semibold hover:text-purple-700 transition-colors duration-300 underline decoration-dotted">
                             Javad Hüseynli
                         </a>
                     </p>

@@ -392,6 +392,7 @@ $avgStudents = $totalGroups > 0 ? round($totalStudents / $totalGroups, 1) : 0;
                                         <a href="users.php?group=<?php echo $group['id_student_group']; ?>" class="text-indigo-600 hover:text-indigo-900">Tələbələrə Bax</a>
 
                                         <?php if ($group['student_count'] > 0): ?>
+                                            <a href="export_group_doc.php?group=<?php echo $group['id_student_group']; ?>" class="text-blue-600 hover:text-blue-900">DOC Export</a>
                                             <a href="export_group.php?group=<?php echo $group['id_student_group']; ?>" class="text-green-600 hover:text-green-900">PDF Export</a>
                                         <?php endif; ?>
 

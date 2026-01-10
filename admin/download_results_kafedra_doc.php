@@ -6,7 +6,7 @@ require_once "../includes/auth.php";
 
 checkLogin();
 
-// Permission Check - Only Kafedra
+// Permission Check - Kafedra (use new download files for confirmed exams)
 if (!is_kafedra()) {
     header("Location: dashboard.php?error=access_denied");
     exit();

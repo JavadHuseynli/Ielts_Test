@@ -7,7 +7,7 @@ require_once "../includes/auth.php";
 checkLogin();
 
 // Permission Check for all roles that can view exam results
-if (!is_admin() && !is_prorektor() && !is_kafedra()) {
+if (!is_admin() && !is_prorektor() && !is_dekan() && !is_kafedra()) {
     header("Location: dashboard.php?error=access_denied");
     exit();
 }
@@ -20,7 +20,7 @@ $teacher_subject_id = $_SESSION['subject_id'] ?? null;
 
 // Handle redirection if exam_id is not set
 if ($exam_id == 0) {
-    if (is_admin() || is_prorektor() || is_kafedra()) {
+    if (is_admin() || is_prorektor() || is_dekan() || is_kafedra()) {
         header("Location: exams.php");
         exit();
     } elseif (is_teacher()) {
@@ -35,7 +35,9 @@ if ($exam_id == 0) {
 }
 
 // Fetch Exam Information
-$query = "SELECT e.id_exam, e.date_exam, e.datetime, e.status, e.confirmed_by, e.confirmed_at, s.subjectname, s.id_subject, sg.group_number
+$query = "SELECT e.id_exam, e.date_exam, e.datetime, e.status, e.confirmed_by, e.confirmed_at,
+          e.confirmed_by_dekan, e.confirmed_at_dekan, e.confirmed_by_kafedra, e.confirmed_at_kafedra,
+          s.subjectname, s.id_subject, sg.group_number
           FROM exams e
           JOIN subjects s ON e.id_subject = s.id_subject
           JOIN student_group sg ON e.id_student_group = sg.id_student_group
@@ -77,7 +79,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['update_manual_scores']
         exit();
     }
 
-    if (!is_admin() && !is_kafedra()) {
+    if (!is_admin() && !is_kafedra() && !is_dekan()) {
         header("Location: exam_results.php?id=" . $exam_id . "&error=no_permission");
         exit();
     } else {
@@ -86,26 +88,105 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['update_manual_scores']
         $speaking_score = floatval($_POST['speaking_score']);
 
         try {
-            $query = "INSERT INTO manual_scores (exam_id, user_id, writing_score, speaking_score, added_by)
-                      VALUES (:exam_id, :user_id, :writing_score, :speaking_score, :added_by)
-                      ON DUPLICATE KEY UPDATE
-                      writing_score = :writing_score,
-                      speaking_score = :speaking_score,
-                      added_by = :added_by";
+            // Get existing scores to preserve values based on role
+            $existingQuery = "SELECT writing_score, speaking_score FROM manual_scores
+                              WHERE exam_id = :exam_id AND user_id = :user_id";
+            $existingStmt = $db->prepare($existingQuery);
+            $existingStmt->execute([':exam_id' => $exam_id, ':user_id' => $user_id]);
+            $existing = $existingStmt->fetch(PDO::FETCH_ASSOC);
+
+            // If dekan, keep existing speaking score
+            if (is_dekan()) {
+                if ($existing && $existing['speaking_score']) {
+                    $speaking_score = $existing['speaking_score'];
+                }
+            }
+
+            // If kafedra, keep existing writing score
+            if (is_kafedra()) {
+                if ($existing && $existing['writing_score']) {
+                    $writing_score = $existing['writing_score'];
+                }
+            }
+
+            // Build query based on role
+            if (is_dekan()) {
+                // Dekan only updates writing score
+                $query = "INSERT INTO manual_scores (exam_id, user_id, writing_score, speaking_score, added_by)
+                          VALUES (:exam_id, :user_id, :writing_score, :speaking_score, :added_by)
+                          ON DUPLICATE KEY UPDATE
+                          writing_score = :writing_score,
+                          added_by = :added_by";
+            } elseif (is_kafedra()) {
+                // Kafedra only updates speaking score
+                $query = "INSERT INTO manual_scores (exam_id, user_id, writing_score, speaking_score, added_by)
+                          VALUES (:exam_id, :user_id, :writing_score, :speaking_score, :added_by)
+                          ON DUPLICATE KEY UPDATE
+                          speaking_score = :speaking_score,
+                          added_by = :added_by";
+            } else {
+                // Admin updates both scores
+                $query = "INSERT INTO manual_scores (exam_id, user_id, writing_score, speaking_score, added_by)
+                          VALUES (:exam_id, :user_id, :writing_score, :speaking_score, :added_by)
+                          ON DUPLICATE KEY UPDATE
+                          writing_score = :writing_score,
+                          speaking_score = :speaking_score,
+                          added_by = :added_by";
+            }
+
             $stmt = $db->prepare($query);
-            $stmt->execute([
+            $params = [
                 ':exam_id' => $exam_id,
                 ':user_id' => $user_id,
                 ':writing_score' => $writing_score,
                 ':speaking_score' => $speaking_score,
                 ':added_by' => $_SESSION['user_id']
-            ]);
+            ];
+            $stmt->execute($params);
 
             // Redirect to refresh the page with success message
             header("Location: exam_results.php?id=" . $exam_id . "&success=1");
             exit();
         } catch (PDOException $e) {
             header("Location: exam_results.php?id=" . $exam_id . "&error=db_error");
+            exit();
+        }
+    }
+}
+
+// Handle Delete Student from Exam - BEFORE header.php
+if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['delete_student'])) {
+    if (!is_admin()) {
+        header("Location: exam_results.php?id=" . $exam_id . "&error=no_permission_delete");
+        exit();
+    } else {
+        $user_id = intval($_POST['user_id']);
+
+        try {
+            $db->beginTransaction();
+
+            // Delete student's answers for this exam
+            $delete_answers = "DELETE FROM answers WHERE exam_id = :exam_id AND user_id = :user_id";
+            $stmt_delete = $db->prepare($delete_answers);
+            $stmt_delete->execute([
+                ':exam_id' => $exam_id,
+                ':user_id' => $user_id
+            ]);
+
+            // Delete student's manual scores for this exam
+            $delete_manual = "DELETE FROM manual_scores WHERE exam_id = :exam_id AND user_id = :user_id";
+            $stmt_manual = $db->prepare($delete_manual);
+            $stmt_manual->execute([
+                ':exam_id' => $exam_id,
+                ':user_id' => $user_id
+            ]);
+
+            $db->commit();
+            header("Location: exam_results.php?id=" . $exam_id . "&success=deleted");
+            exit();
+        } catch (PDOException $e) {
+            $db->rollBack();
+            header("Location: exam_results.php?id=" . $exam_id . "&error=delete_failed");
             exit();
         }
     }
@@ -170,15 +251,15 @@ include_once "../includes/header.php";
 // Tələbə nəticələrini almaq
 $query = "SELECT u.id_users, u.f_name, u.username, sg.group_number,
           COUNT(a.id_answer) as total_questions,
-          SUM(a.is_correct) as correct_answers,
-          SUM(qr.question_score * a.is_correct) as computer_score,
+          COALESCE(SUM(a.is_correct), 0) as correct_answers,
+          COALESCE(SUM(qr.question_score * a.is_correct), 0) as computer_score,
           COALESCE(ms.writing_score, 0) as writing_score,
           COALESCE(ms.speaking_score, 0) as speaking_score,
-          (SUM(qr.question_score * a.is_correct) + COALESCE(ms.writing_score, 0) + COALESCE(ms.speaking_score, 0)) as total_score,
-          (SELECT SUM(qr2.question_score)
+          (COALESCE(SUM(qr.question_score * a.is_correct), 0) + COALESCE(ms.writing_score, 0) + COALESCE(ms.speaking_score, 0)) as total_score,
+          COALESCE((SELECT SUM(qr2.question_score)
            FROM question_read qr2
            JOIN question_files qf2 ON qr2.id_read_quest_file = qf2.id_read_quest_file
-           WHERE qf2.subject_id = s.id_subject) as max_score
+           WHERE qf2.subject_id = s.id_subject), 0) as max_score
           FROM users u
           JOIN answers a ON u.id_users = a.user_id
           JOIN question_read qr ON a.id_questions = qr.id_question_text
@@ -199,12 +280,12 @@ $totalStudents = count($results);
 $totalScore = 0;
 $totalCorrect = 0;
 $totalQuestions = 0;
-$maxScore = $totalStudents > 0 ? $results[0]['max_score'] : 0;
+$maxScore = $totalStudents > 0 ? ($results[0]['max_score'] ?? 0) : 0;
 
 foreach ($results as $result) {
-    $totalScore += $result['total_score'];
-    $totalCorrect += $result['correct_answers'];
-    $totalQuestions += $result['total_questions'];
+    $totalScore += ($result['total_score'] ?? 0);
+    $totalCorrect += ($result['correct_answers'] ?? 0);
+    $totalQuestions += ($result['total_questions'] ?? 0);
 }
 
 $avgScore = $totalStudents > 0 ? $totalScore / $totalStudents : 0;
@@ -221,6 +302,9 @@ if (isset($_GET['success'])) {
         $message_type = 'success';
     } elseif ($_GET['success'] == 'archived') {
         $message = 'Nəticələr uğurla arxivləndi!';
+        $message_type = 'success';
+    } elseif ($_GET['success'] == 'deleted') {
+        $message = 'Tələbə uğurla silindi!';
         $message_type = 'success';
     }
 }
@@ -243,6 +327,12 @@ if (isset($_GET['error'])) {
         $message_type = 'error';
     } elseif ($_GET['error'] == 'archive_failed') {
         $message = 'Nəticələri arxivləyərkən xəta baş verdi!';
+        $message_type = 'error';
+    } elseif ($_GET['error'] == 'no_permission_delete') {
+        $message = 'Tələbə silməyə icazəniz yoxdur! Yalnız admin silə bilər.';
+        $message_type = 'error';
+    } elseif ($_GET['error'] == 'delete_failed') {
+        $message = 'Tələbə silinərkən xəta baş verdi!';
         $message_type = 'error';
     }
 }
@@ -321,8 +411,34 @@ if (isset($_GET['error'])) {
         <?php endif; ?>
 
         <!-- Confirmation Status Banner -->
-        <?php if ($exam['confirmed_by']): ?>
-        <div class="mb-6">
+        <?php
+        $dekanConfirmed = !empty($exam['confirmed_by_dekan']);
+        $kafedraConfirmed = !empty($exam['confirmed_by_kafedra']);
+        $bothConfirmed = $dekanConfirmed && $kafedraConfirmed;
+        ?>
+
+        <?php if ($dekanConfirmed || $kafedraConfirmed): ?>
+        <div class="mb-6 space-y-3">
+            <?php if ($dekanConfirmed): ?>
+            <div class="bg-gradient-to-r from-teal-500 to-cyan-600 text-white px-6 py-4 rounded-xl shadow-lg flex items-center space-x-3">
+                <div class="flex-shrink-0">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                </div>
+                <div class="flex-1">
+                    <p class="font-bold text-lg">Dekan tərəfindən təsdiqlənib</p>
+                    <p class="text-sm text-teal-100 mt-1">
+                        Təsdiq tarixi: <?php echo $exam['confirmed_at_dekan'] ? date('d.m.Y H:i', strtotime($exam['confirmed_at_dekan'])) : 'N/A'; ?>
+                    </p>
+                </div>
+                <div class="flex-shrink-0">
+                    <span class="bg-white text-teal-600 px-4 py-2 rounded-lg font-bold text-sm">✓ TƏSDİQLƏNİB</span>
+                </div>
+            </div>
+            <?php endif; ?>
+
+            <?php if ($kafedraConfirmed): ?>
             <div class="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-6 py-4 rounded-xl shadow-lg flex items-center space-x-3">
                 <div class="flex-shrink-0">
                     <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -332,13 +448,31 @@ if (isset($_GET['error'])) {
                 <div class="flex-1">
                     <p class="font-bold text-lg">Kafedra tərəfindən təsdiqlənib</p>
                     <p class="text-sm text-green-100 mt-1">
-                        Təsdiq tarixi: <?php echo $exam['confirmed_at'] ? date('d.m.Y H:i', strtotime($exam['confirmed_at'])) : 'N/A'; ?>
+                        Təsdiq tarixi: <?php echo $exam['confirmed_at_kafedra'] ? date('d.m.Y H:i', strtotime($exam['confirmed_at_kafedra'])) : 'N/A'; ?>
                     </p>
                 </div>
                 <div class="flex-shrink-0">
                     <span class="bg-white text-green-600 px-4 py-2 rounded-lg font-bold text-sm">✓ TƏSDİQLƏNİB</span>
                 </div>
             </div>
+            <?php endif; ?>
+
+            <?php if ($bothConfirmed): ?>
+            <div class="bg-gradient-to-r from-purple-500 to-indigo-600 text-white px-6 py-4 rounded-xl shadow-lg flex items-center space-x-3">
+                <div class="flex-shrink-0">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                </div>
+                <div class="flex-1">
+                    <p class="font-bold text-lg">HƏM DEKAN, HƏM KAFEDRA TƏSDİQLƏYİB</p>
+                    <p class="text-sm text-purple-100 mt-1">Yükləmə üçün hazırdır</p>
+                </div>
+                <div class="flex-shrink-0">
+                    <span class="bg-white text-purple-600 px-4 py-2 rounded-lg font-bold text-sm">✓✓ TAM TƏSDİQLƏNİB</span>
+                </div>
+            </div>
+            <?php endif; ?>
         </div>
         <?php endif; ?>
 
@@ -361,28 +495,86 @@ if (isset($_GET['error'])) {
                         <span>İmtahanlara qayıt</span>
                     </a>
                     <?php if (is_prorektor()): ?>
-                    <a href="download_results.php?id=<?php echo $exam_id; ?>" class="px-4 py-2 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 transition-all flex items-center space-x-2">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                        </svg>
-                        <span>DOCX Yüklə</span>
-                    </a>
+                        <?php if ($bothConfirmed): ?>
+                        <a href="download_results_doc.php?id=<?php echo $exam_id; ?>" class="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-semibold hover:from-blue-700 hover:to-indigo-700 transition-all flex items-center space-x-2 shadow-md hover:shadow-lg">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+                            </svg>
+                            <span>DOC Yüklə</span>
+                        </a>
+                        <a href="download_results_excel.php?id=<?php echo $exam_id; ?>" class="px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl font-semibold hover:from-green-700 hover:to-emerald-700 transition-all flex items-center space-x-2 shadow-md hover:shadow-lg">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            </svg>
+                            <span>Excel Yüklə</span>
+                        </a>
+                        <?php else: ?>
+                        <div class="px-4 py-2 bg-gray-300 text-gray-600 rounded-xl font-semibold cursor-not-allowed flex items-center space-x-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                            </svg>
+                            <span>Hər iki təsdiq gözlənilir (Dekan və Kafedra)</span>
+                        </div>
+                        <?php endif; ?>
+                    <?php endif; ?>
+                    <?php if (is_dekan()): ?>
+                        <?php if (!$dekanConfirmed): ?>
+                        <a href="confirm_exam_dekan.php?id=<?php echo $exam_id; ?>" class="px-4 py-2 bg-gradient-to-r from-teal-600 to-cyan-600 text-white rounded-xl font-semibold hover:from-teal-700 hover:to-cyan-700 transition-all flex items-center space-x-2 shadow-md hover:shadow-lg">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            <span>Təsdiq edirəm (Dekan)</span>
+                        </a>
+                        <?php elseif ($bothConfirmed): ?>
+                        <a href="download_results_doc.php?id=<?php echo $exam_id; ?>" class="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-semibold hover:from-blue-700 hover:to-indigo-700 transition-all flex items-center space-x-2 shadow-md hover:shadow-lg">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+                            </svg>
+                            <span>DOC Yüklə</span>
+                        </a>
+                        <a href="download_results_excel.php?id=<?php echo $exam_id; ?>" class="px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl font-semibold hover:from-green-700 hover:to-emerald-700 transition-all flex items-center space-x-2 shadow-md hover:shadow-lg">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            </svg>
+                            <span>Excel Yüklə</span>
+                        </a>
+                        <?php else: ?>
+                        <div class="px-4 py-2 bg-yellow-300 text-yellow-800 rounded-xl font-semibold cursor-not-allowed flex items-center space-x-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                            </svg>
+                            <span>Kafedra təsdiqi gözlənilir</span>
+                        </div>
+                        <?php endif; ?>
                     <?php endif; ?>
                     <?php if (is_kafedra()): ?>
-                        <?php if (!$exam['confirmed_by']): ?>
+                        <?php if (!$kafedraConfirmed): ?>
                         <a href="confirm_exam_kafedra.php?id=<?php echo $exam_id; ?>" class="px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl font-semibold hover:from-green-700 hover:to-emerald-700 transition-all flex items-center space-x-2 shadow-md hover:shadow-lg">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                             </svg>
-                            <span>Təsdiq edirəm</span>
+                            <span>Təsdiq edirəm (Kafedra)</span>
                         </a>
-                        <?php else: ?>
-                        <a href="download_results_kafedra_doc.php?id=<?php echo $exam_id; ?>" class="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-semibold hover:from-indigo-700 hover:to-purple-700 transition-all flex items-center space-x-2 shadow-md hover:shadow-lg">
+                        <?php elseif ($bothConfirmed): ?>
+                        <a href="download_results_doc.php?id=<?php echo $exam_id; ?>" class="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-semibold hover:from-blue-700 hover:to-indigo-700 transition-all flex items-center space-x-2 shadow-md hover:shadow-lg">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
                             </svg>
-                            <span>DOC Yüklə (Kafedra)</span>
+                            <span>DOC Yüklə</span>
                         </a>
+                        <a href="download_results_excel.php?id=<?php echo $exam_id; ?>" class="px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl font-semibold hover:from-green-700 hover:to-emerald-700 transition-all flex items-center space-x-2 shadow-md hover:shadow-lg">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            </svg>
+                            <span>Excel Yüklə</span>
+                        </a>
+                        <?php else: ?>
+                        <div class="px-4 py-2 bg-yellow-300 text-yellow-800 rounded-xl font-semibold cursor-not-allowed flex items-center space-x-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                            </svg>
+                            <span>Dekan təsdiqi gözlənilir</span>
+                        </div>
                         <?php endif; ?>
                     <?php endif; ?>
                     <?php if (is_admin()): ?>
@@ -392,6 +584,14 @@ if (isset($_GET['error'])) {
                         </svg>
                         <span>Nəticələri Arxivlə</span>
                     </button>
+                    <?php if ($exam['confirmed_by']): ?>
+                    <button onclick="if(confirm('Təsdiqi geri almaq istədiyinizdən əminsiniz?')) { window.location.href='unconfirm_exam.php?id=<?php echo $exam_id; ?>'; }" class="px-4 py-2 bg-red-600 text-white rounded-xl font-semibold hover:bg-red-700 transition-all flex items-center space-x-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                        <span>Təsdiqi Geri Al</span>
+                    </button>
+                    <?php endif; ?>
                     <?php endif; ?>
                 </div>
             </div>
@@ -419,8 +619,8 @@ if (isset($_GET['error'])) {
                 <div class="flex items-center justify-between">
                     <div>
                         <p class="text-gray-600 text-sm font-medium mb-1">Orta Bal</p>
-                        <p class="text-4xl font-bold text-green-600"><?php echo number_format($avgScore, 2); ?></p>
-                        <p class="text-sm text-gray-500 mt-1"><?php echo number_format($avgPercent, 2); ?>%</p>
+                        <p class="text-4xl font-bold text-green-600"><?php echo number_format($avgScore ?? 0, 2); ?></p>
+                        <p class="text-sm text-gray-500 mt-1"><?php echo number_format($avgPercent ?? 0, 2); ?>%</p>
                     </div>
                     <div class="w-16 h-16 bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl flex items-center justify-center shadow-lg">
                         <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -435,8 +635,8 @@ if (isset($_GET['error'])) {
                 <div class="flex items-center justify-between">
                     <div>
                         <p class="text-gray-600 text-sm font-medium mb-1">Orta Düzgün</p>
-                        <p class="text-4xl font-bold text-cyan-600"><?php echo number_format($avgCorrect, 2); ?></p>
-                        <p class="text-sm text-gray-500 mt-1"><?php echo $totalStudents > 0 ? number_format(($totalCorrect / $totalQuestions) * 100, 2) : 0; ?>%</p>
+                        <p class="text-4xl font-bold text-cyan-600"><?php echo number_format($avgCorrect ?? 0, 2); ?></p>
+                        <p class="text-sm text-gray-500 mt-1"><?php echo ($totalStudents > 0 && $totalQuestions > 0) ? number_format((($totalCorrect ?? 0) / $totalQuestions) * 100, 2) : 0; ?>%</p>
                     </div>
                     <div class="w-16 h-16 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-2xl flex items-center justify-center shadow-lg">
                         <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -451,7 +651,7 @@ if (isset($_GET['error'])) {
                 <div class="flex items-center justify-between">
                     <div>
                         <p class="text-gray-600 text-sm font-medium mb-1">Maksimum Bal</p>
-                        <p class="text-4xl font-bold text-purple-600"><?php echo number_format($maxScore, 2); ?></p>
+                        <p class="text-4xl font-bold text-purple-600"><?php echo number_format($maxScore ?? 0, 2); ?></p>
                     </div>
                     <div class="w-16 h-16 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg">
                         <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -494,7 +694,8 @@ if (isset($_GET['error'])) {
                             <?php
                             $counter = 1;
                             foreach ($results as $result):
-                                $percentage = ($result['total_score'] / $result['max_score']) * 100;
+                                $maxScore_result = $result['max_score'] ?? 0;
+                                $percentage = $maxScore_result > 0 ? (($result['total_score'] ?? 0) / $maxScore_result) * 100 : 0;
                                 $performanceClass = '';
 
                                 if ($percentage >= 85) {
@@ -507,22 +708,35 @@ if (isset($_GET['error'])) {
                                     $performanceClass = 'performance-poor';
                                 }
 
-                                // Only admin and kafedra can edit scores
+                                // Admin can edit all scores anytime
+                                // Kafedra can only edit speaking score (before confirmation)
+                                // Dekan can only edit writing score (before confirmation)
                                 // If exam is confirmed, only admin can edit
                                 $rowOnclick = '';
                                 $canEdit = false;
+                                $canEditWritingOnly = false;
+                                $canEditSpeakingOnly = false;
 
                                 if (is_admin()) {
                                     $canEdit = true;
                                 } elseif (is_kafedra() && !$exam['confirmed_by']) {
-                                    $canEdit = true;
+                                    $canEditSpeakingOnly = true;
+                                } elseif (is_dekan() && !$exam['confirmed_by']) {
+                                    $canEditWritingOnly = true;
                                 }
 
-                                if ($canEdit) {
-                                    $rowOnclick = "onclick=\"showScorePopup(event, this, " . $result['id_users'] . ", '" . htmlspecialchars($result['f_name'], ENT_QUOTES) . "', " . $result['writing_score'] . ", " . $result['speaking_score'] . ")\"";
+                                $editMode = 'both'; // both, writing, speaking
+                                if ($canEditWritingOnly) {
+                                    $editMode = 'writing';
+                                } elseif ($canEditSpeakingOnly) {
+                                    $editMode = 'speaking';
+                                }
+
+                                if ($canEdit || $canEditWritingOnly || $canEditSpeakingOnly) {
+                                    $rowOnclick = "onclick=\"showScorePopup(event, this, " . $result['id_users'] . ", '" . htmlspecialchars($result['f_name'], ENT_QUOTES) . "', " . ($result['writing_score'] ?? 0) . ", " . ($result['speaking_score'] ?? 0) . ", '" . $editMode . "')\"";
                                 }
                             ?>
-                                <tr class="result-row <?php echo $performanceClass; ?> <?php echo $canEdit ? 'editable-row' : ''; ?>" <?php echo $rowOnclick; ?>>
+                                <tr class="result-row <?php echo $performanceClass; ?> <?php echo ($canEdit || $canEditWritingOnly || $canEditSpeakingOnly) ? 'editable-row' : ''; ?>" <?php echo $rowOnclick; ?>>
                                     <td class="px-6 py-4 text-sm font-mono text-gray-600"><?php echo $counter++; ?></td>
                                     <td class="px-6 py-4 text-sm font-semibold text-gray-900"><?php echo htmlspecialchars($result['f_name']); ?></td>
                                     <td class="px-6 py-4 text-sm text-gray-700">
@@ -535,33 +749,44 @@ if (isset($_GET['error'])) {
                                     </td>
                                     <td class="px-6 py-4 text-sm">
                                         <span class="inline-flex items-center px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 text-sm font-bold border border-blue-200">
-                                            <?php echo number_format($result['computer_score'], 2); ?>
+                                            <?php echo number_format($result['computer_score'] ?? 0, 2); ?>
                                         </span>
                                     </td>
                                     <td class="px-6 py-4 text-sm">
                                         <span class="inline-flex items-center px-3 py-1.5 rounded-lg bg-green-50 text-green-700 text-sm font-bold border border-green-200">
-                                            <?php echo number_format($result['writing_score'], 2); ?>
+                                            <?php echo number_format($result['writing_score'] ?? 0, 2); ?>
                                         </span>
                                     </td>
                                     <td class="px-6 py-4 text-sm">
                                         <span class="inline-flex items-center px-3 py-1.5 rounded-lg bg-purple-50 text-purple-700 text-sm font-bold border border-purple-200">
-                                            <?php echo number_format($result['speaking_score'], 2); ?>
+                                            <?php echo number_format($result['speaking_score'] ?? 0, 2); ?>
                                         </span>
                                     </td>
                                     <td class="px-6 py-4 text-sm">
                                         <span class="inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 text-white text-base font-bold shadow-lg">
-                                            <?php echo number_format($result['total_score'], 2); ?>
+                                            <?php echo number_format($result['total_score'] ?? 0, 2); ?>
                                         </span>
                                     </td>
                                     <td class="px-6 py-4 text-sm" onclick="event.stopPropagation()">
-                                        <a href="student_answers.php?exam=<?php echo $exam_id; ?>&student=<?php echo $result['id_users']; ?>"
-                                           class="inline-flex items-center space-x-1 px-3 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg font-semibold hover:from-blue-700 hover:to-indigo-700 transition-all">
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
-                                            </svg>
-                                            <span>Detal</span>
-                                        </a>
+                                        <div class="flex items-center space-x-2">
+                                            <a href="student_answers.php?exam=<?php echo $exam_id; ?>&student=<?php echo $result['id_users']; ?>"
+                                               class="inline-flex items-center space-x-1 px-3 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg font-semibold hover:from-blue-700 hover:to-indigo-700 transition-all">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                                                </svg>
+                                                <span>Detal</span>
+                                            </a>
+                                            <?php if (is_admin()): ?>
+                                            <button onclick="confirmDeleteStudent(<?php echo $result['id_users']; ?>, '<?php echo htmlspecialchars($result['f_name'], ENT_QUOTES); ?>')"
+                                                    class="inline-flex items-center space-x-1 px-3 py-2 bg-gradient-to-r from-red-600 to-pink-600 text-white rounded-lg font-semibold hover:from-red-700 hover:to-pink-700 transition-all">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                                </svg>
+                                                <span>Sil</span>
+                                            </button>
+                                            <?php endif; ?>
+                                        </div>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
@@ -574,8 +799,8 @@ if (isset($_GET['error'])) {
     </div>
 </div>
 
-<!-- Score Edit Popup Modal (Only for Admin and Kafedra) -->
-<?php if (is_admin() || is_kafedra()): ?>
+<!-- Score Edit Popup Modal (Only for Admin, Kafedra and Dekan) -->
+<?php if (is_admin() || is_kafedra() || is_dekan()): ?>
 <div id="scorePopup" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
     <div class="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full border-2 border-indigo-200" onclick="event.stopPropagation()">
         <form method="post" action="" id="scoreForm">
@@ -591,7 +816,7 @@ if (isset($_GET['error'])) {
                         </svg>
                     </button>
                 </div>
-                <p class="text-sm text-gray-600 flex items-center">
+                <p class="text-sm text-gray-600 flex items-center" id="popup_description">
                     <svg class="w-4 h-4 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
                     </svg>
@@ -600,7 +825,7 @@ if (isset($_GET['error'])) {
             </div>
 
             <div class="space-y-5">
-                <div>
+                <div id="writing_score_container">
                     <label for="writing_score" class="block text-sm font-bold text-gray-700 mb-2 flex items-center">
                         <svg class="w-5 h-5 mr-2 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
@@ -612,7 +837,7 @@ if (isset($_GET['error'])) {
                            placeholder="0.00">
                 </div>
 
-                <div>
+                <div id="speaking_score_container">
                     <label for="speaking_score" class="block text-sm font-bold text-gray-700 mb-2 flex items-center">
                         <svg class="w-5 h-5 mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
@@ -640,22 +865,59 @@ if (isset($_GET['error'])) {
 </div>
 
 <script>
-function showScorePopup(event, row, userId, studentName, writingScore, speakingScore) {
+function showScorePopup(event, row, userId, studentName, writingScore, speakingScore, editMode = 'both') {
     // Prevent event propagation
     if (event) event.stopPropagation();
 
     const popup = document.getElementById('scorePopup');
+    const writingContainer = document.getElementById('writing_score_container');
+    const speakingContainer = document.getElementById('speaking_score_container');
+    const writingInput = document.getElementById('writing_score');
+    const speakingInput = document.getElementById('speaking_score');
+    const descriptionText = document.getElementById('popup_description');
+
     document.getElementById('popup_user_id').value = userId;
     document.getElementById('popup_student_name').textContent = studentName;
     document.getElementById('writing_score').value = writingScore;
     document.getElementById('speaking_score').value = speakingScore;
 
+    // Handle different edit modes
+    if (editMode === 'writing') {
+        // Dekan - only writing score
+        writingContainer.style.display = 'block';
+        speakingContainer.style.display = 'none';
+        writingInput.setAttribute('required', 'required');
+        speakingInput.removeAttribute('required');
+        speakingInput.value = speakingScore; // Keep existing value
+        descriptionText.innerHTML = '<svg class="w-4 h-4 mr-2 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg> Yalnız yazı balını daxil edin (Dekan)';
+    } else if (editMode === 'speaking') {
+        // Kafedra - only speaking score
+        writingContainer.style.display = 'none';
+        speakingContainer.style.display = 'block';
+        writingInput.removeAttribute('required');
+        speakingInput.setAttribute('required', 'required');
+        writingInput.value = writingScore; // Keep existing value
+        descriptionText.innerHTML = '<svg class="w-4 h-4 mr-2 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg> Yalnız danışıq balını daxil edin (Kafedra)';
+    } else {
+        // Admin - both scores
+        writingContainer.style.display = 'block';
+        speakingContainer.style.display = 'block';
+        writingInput.setAttribute('required', 'required');
+        speakingInput.setAttribute('required', 'required');
+        descriptionText.innerHTML = '<svg class="w-4 h-4 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg> Yazı və danışıq ballarını daxil edin';
+    }
+
     popup.classList.remove('hidden');
 
-    // Focus on first input
+    // Focus on first visible input
     setTimeout(() => {
-        document.getElementById('writing_score').focus();
-        document.getElementById('writing_score').select();
+        if (editMode === 'speaking') {
+            document.getElementById('speaking_score').focus();
+            document.getElementById('speaking_score').select();
+        } else {
+            document.getElementById('writing_score').focus();
+            document.getElementById('writing_score').select();
+        }
     }, 100);
 }
 
@@ -711,6 +973,77 @@ document.addEventListener('DOMContentLoaded', function() {
         </form>
     </div>
 </div>
+<?php endif; ?>
+
+<!-- Delete Student Confirmation Modal (Only for Admin) -->
+<?php if (is_admin()): ?>
+<div id="deleteStudentModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-xl font-bold text-gray-900">Tələbəni Sil</h3>
+            <button onclick="hideDeleteModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+        <form method="post" action="" id="deleteStudentForm">
+            <input type="hidden" name="delete_student" value="1">
+            <input type="hidden" name="user_id" id="delete_user_id">
+
+            <div class="mb-6">
+                <div class="flex items-center justify-center mb-4">
+                    <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
+                        <svg class="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                        </svg>
+                    </div>
+                </div>
+                <p class="text-gray-700 text-center mb-2">
+                    <strong id="delete_student_name" class="text-red-600"></strong> adlı tələbəni bu imtahandan silmək istədiyinizə əminsiniz?
+                </p>
+                <p class="text-red-600 text-sm text-center mb-4">
+                    Bu əməliyyat geri qaytarıla bilməz! Tələbənin bütün cavabları və balları silinəcək.
+                </p>
+            </div>
+
+            <div class="flex space-x-3">
+                <button type="button" onclick="hideDeleteModal()" class="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-xl font-semibold hover:bg-gray-300 transition-all">
+                    Ləğv et
+                </button>
+                <button type="submit" class="flex-1 px-4 py-2 bg-gradient-to-r from-red-600 to-pink-600 text-white rounded-xl font-semibold hover:from-red-700 hover:to-pink-700 transition-all">
+                    Sil
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function confirmDeleteStudent(userId, studentName) {
+    document.getElementById('delete_user_id').value = userId;
+    document.getElementById('delete_student_name').textContent = studentName;
+    document.getElementById('deleteStudentModal').classList.remove('hidden');
+}
+
+function hideDeleteModal() {
+    document.getElementById('deleteStudentModal').classList.add('hidden');
+}
+
+// Close modal on escape key
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') {
+        hideDeleteModal();
+    }
+});
+
+// Close modal when clicking outside
+document.getElementById('deleteStudentModal')?.addEventListener('click', function(event) {
+    if (event.target === this) {
+        hideDeleteModal();
+    }
+});
+</script>
 <?php endif; ?>
 
 <?php include_once "../includes/footer.php"; ?>

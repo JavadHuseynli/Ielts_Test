@@ -1,8 +1,8 @@
 <?php
 class Database {
-    private $host = "localhost";
+    private $host = "172.18.250.21:3306";
     private $db_name = "edu_system";
-    private $username = "root";
+    private $username = "admins";
     private $password = "23234455";
     public $conn;
     
@@ -17,14 +17,13 @@ class Database {
             }
             fclose($socket);
             
-            $this->conn = new PDO("mysql:host=" . $this->host . ";dbname=" . $this->db_name, $this->username, $this->password);
-            $this->conn->exec("set names utf8");
+            $this->conn = new PDO("mysql:host=" . $this->host . ";dbname=" . $this->db_name . ";charset=utf8mb4", $this->username, $this->password);
             $this->conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
             
             return $this->conn;
         } catch(PDOException $exception) {
-            echo "Verilənlər bazası xətası: " . $exception->getMessage();
-            return null;
+            // Display a clear error message and stop execution
+            die("<h1>Verilənlər bazasına qoşulmaq mümkün olmadı</h1><p>Xəta: " . $exception->getMessage() . "</p><p>Zəhmət olmasa, <code>includes/db.php</code> faylındakı verilənlər bazası parametrlərini (host, istifadəçi adı, şifrə) yoxlayın.</p>");
         }
     }
     
@@ -52,7 +51,7 @@ class Database {
             $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
             
             // Verilənlər bazasını yarat
-            $conn->exec("CREATE DATABASE IF NOT EXISTS `" . $this->db_name . "` DEFAULT CHARACTER SET utf8 COLLATE utf8_general_ci");
+            $conn->exec("CREATE DATABASE IF NOT EXISTS `" . $this->db_name . "` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
             
             // Verilənlər bazasını seç
             $conn->exec("USE `" . $this->db_name . "`");
@@ -75,7 +74,7 @@ class Database {
                     `group_id` INT NULL,
                     `username` VARCHAR(50) NOT NULL UNIQUE,
                     `password` VARCHAR(255) NOT NULL,
-                    `status` ENUM('admin', 'student') NOT NULL DEFAULT 'student',
+                    `status` ENUM('admin', 'prorektor', 'dekan', 'kafedra', 'muellim', 'student') NOT NULL DEFAULT 'student',
                     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     FOREIGN KEY (group_id) REFERENCES student_group(id_student_group) ON DELETE SET NULL,
@@ -231,6 +230,20 @@ class Database {
                     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     FOREIGN KEY (id_answer) REFERENCES answers(id_answer) ON DELETE CASCADE,
                     INDEX idx_answer (id_answer)
+                )",
+
+                // Müəllim-Fənn əlaqəsi cədvəli (teacher_subjects)
+                "CREATE TABLE IF NOT EXISTS `teacher_subjects` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `teacher_id` INT NOT NULL,
+                    `subject_id` INT NOT NULL,
+                    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    FOREIGN KEY (`teacher_id`) REFERENCES `users`(`id_users`) ON DELETE CASCADE,
+                    FOREIGN KEY (`subject_id`) REFERENCES `subjects`(`id_subject`) ON DELETE CASCADE,
+                    UNIQUE KEY `unique_teacher_subject` (`teacher_id`, `subject_id`),
+                    INDEX `idx_teacher` (`teacher_id`),
+                    INDEX `idx_subject` (`subject_id`)
                 )"
             ];
             

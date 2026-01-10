@@ -1,0 +1,58 @@
+-- MySQL dump 10.13  Distrib 8.0.40, for Win64 (x86_64)
+--
+-- Host: 127.0.0.1    Database: edu_system
+-- ------------------------------------------------------
+-- Server version	8.0.40
+
+/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+/*!50503 SET NAMES utf8 */;
+/*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
+/*!40103 SET TIME_ZONE='+00:00' */;
+/*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
+/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
+/*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+
+--
+-- Table structure for table `exam_results_archive`
+--
+
+DROP TABLE IF EXISTS `exam_results_archive`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `exam_results_archive` (
+  `id_archive` int NOT NULL AUTO_INCREMENT,
+  `exam_id` int NOT NULL,
+  `user_id` int NOT NULL,
+  `score_earned` decimal(5,2) NOT NULL,
+  `archived_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `archived_by_user_id` int NOT NULL,
+  PRIMARY KEY (`id_archive`),
+  KEY `idx_exam` (`exam_id`),
+  KEY `idx_user` (`user_id`),
+  KEY `idx_archived_at` (`archived_at`)
+) ENGINE=InnoDB AUTO_INCREMENT=20 DEFAULT CHARSET=utf8mb3;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `exam_results_archive`
+--
+
+LOCK TABLES `exam_results_archive` WRITE;
+/*!40000 ALTER TABLE `exam_results_archive` DISABLE KEYS */;
+INSERT INTO `exam_results_archive` VALUES (1,277,1136,20.00,'2025-12-16 21:39:58',1),(2,279,1374,28.00,'2025-12-16 21:59:39',1),(3,279,1366,27.00,'2025-12-16 21:59:39',1),(4,279,1370,27.00,'2025-12-16 21:59:39',1),(5,279,1373,27.00,'2025-12-16 21:59:39',1),(6,279,1371,26.00,'2025-12-16 21:59:39',1),(7,279,1391,26.00,'2025-12-16 21:59:39',1),(8,279,1377,23.00,'2025-12-16 21:59:39',1),(9,279,1365,22.00,'2025-12-16 21:59:39',1),(10,279,1363,22.00,'2025-12-16 21:59:39',1),(11,279,1364,21.00,'2025-12-16 21:59:39',1),(12,279,1376,21.00,'2025-12-16 21:59:39',1),(13,279,1367,20.00,'2025-12-16 21:59:39',1),(14,279,1368,18.00,'2025-12-16 21:59:39',1),(15,279,1372,18.00,'2025-12-16 21:59:39',1),(16,279,1369,18.00,'2025-12-16 21:59:39',1),(17,279,1375,18.00,'2025-12-16 21:59:39',1),(18,279,1362,17.00,'2025-12-16 21:59:39',1),(19,284,1250,29.00,'2025-12-22 08:13:02',1);
+/*!40000 ALTER TABLE `exam_results_archive` ENABLE KEYS */;
+UNLOCK TABLES;
+/*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
+
+/*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
+/*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
+/*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
+/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
+/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+/*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
+
+-- Dump completed on 2026-01-06 19:04:56

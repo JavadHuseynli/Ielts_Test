@@ -17,15 +17,17 @@ $is_teacher_only = is_teacher() && !is_admin();
 // Subject ID from URL
 $subject_id = isset($_GET['subject']) ? intval($_GET['subject']) : 0;
 
-// Teacher can only access their own subject
+// Teacher can only access their own subjects
 if (is_teacher()) {
-    $teacher_subject_id = $_SESSION['subject_id'] ?? 0;
+    $teacher_subject_ids = $_SESSION['teacher_subjects'] ?? [];
     if ($subject_id == 0) {
-        header("Location: questions.php?subject=" . $teacher_subject_id);
+        // If no subject selected, redirect to subjects page
+        header("Location: subjects.php");
         exit();
     }
-    if ($subject_id != $teacher_subject_id) {
-        header("Location: questions.php?subject=" . $teacher_subject_id . "&error=restricted");
+    // Check if teacher has access to this subject
+    if (!in_array($subject_id, $teacher_subject_ids)) {
+        header("Location: subjects.php?error=restricted");
         exit();
     }
 }
@@ -89,9 +91,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['add_file'])) {
                 $file_error = "Yanlış fayl formatı!";
             }
             
-            if ($_FILES['file_upload']['size'] > 25 * 1024 * 1024) { // Increased to 25MB
+            $max_file_size = ($file_type == 'listening') ? 5 * 1024 * 1024 : 25 * 1024 * 1024; // 5MB for listening, 25MB for others
+            $max_file_size_text = ($file_type == 'listening') ? '5MB' : '25MB';
+            
+            if ($_FILES['file_upload']['size'] > $max_file_size) {
                 $upload_ok = false;
-                $file_error = "Fayl ölçüsü çox böyükdür (max: 25MB)!";
+                $file_error = "Fayl ölçüsü çox böyükdür (max: " . $max_file_size_text . ")!";
             }
             
             if ($upload_ok) {
@@ -163,9 +168,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['edit_file'])) {
                     $file_error = "Yanlış fayl formatı!";
                 }
                 
-                if ($_FILES['edit_file_upload']['size'] > 25 * 1024 * 1024) {
+                $max_file_size = ($file_type == 'listening') ? 5 * 1024 * 1024 : 25 * 1024 * 1024; // 5MB for listening, 25MB for others
+                $max_file_size_text = ($file_type == 'listening') ? '5MB' : '25MB';
+
+                if ($_FILES['edit_file_upload']['size'] > $max_file_size) {
                     $upload_ok = false;
-                    $file_error = "Fayl ölçüsü çox böyükdür (max: 25MB)!";
+                    $file_error = "Fayl ölçüsü çox böyükdür (max: " . $max_file_size_text . ")!";
                 }
 
                 if ($upload_ok) {
@@ -272,6 +280,90 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['add_question'])) {
                     $query = "INSERT INTO matching_questions (id_question_text, variants, corr_variant) VALUES (:id, :variants, :corr_variant)";
                     $stmt = $db->prepare($query);
                     $stmt->execute([':id' => $question_id, ':variants' => trim($_POST['variants']), ':corr_variant' => trim($_POST['corr_variant'])]);
+                } elseif ($question_var == 'matching2') {
+                    // Validate matching2 question fields
+                    if (empty($_POST['passage_text']) || empty($_POST['blank_numbers']) || empty($_POST['blank_answers']) || empty($_POST['blank_scores'])) {
+                        throw new Exception('Pasaj, boşluqlar və cavablar doldurulmalıdır!');
+                    }
+
+                    // Build variants from individual fields (A-E)
+                    $variants_array = [];
+                    if (!empty($_POST['m2_variant_a'])) $variants_array[] = 'A) ' . trim($_POST['m2_variant_a']);
+                    if (!empty($_POST['m2_variant_b'])) $variants_array[] = 'B) ' . trim($_POST['m2_variant_b']);
+                    if (!empty($_POST['m2_variant_c'])) $variants_array[] = 'C) ' . trim($_POST['m2_variant_c']);
+                    if (!empty($_POST['m2_variant_d'])) $variants_array[] = 'D) ' . trim($_POST['m2_variant_d']);
+                    if (!empty($_POST['m2_variant_e'])) $variants_array[] = 'E) ' . trim($_POST['m2_variant_e']);
+
+                    if (empty($variants_array)) {
+                        throw new Exception('Ən azı bir variant doldurulmalıdır!');
+                    }
+
+                    $variants = implode(',', $variants_array);
+
+                    // Insert into matching2_main
+                    $query = "INSERT INTO matching2_main (id_question_text, passage_text, variants) VALUES (:id, :passage, :variants)";
+                    $stmt = $db->prepare($query);
+                    $stmt->execute([
+                        ':id' => $question_id,
+                        ':passage' => trim($_POST['passage_text']),
+                        ':variants' => $variants
+                    ]);
+                    $matching2_main_id = $db->lastInsertId();
+
+                    // Insert each blank item
+                    $blank_numbers = $_POST['blank_numbers'];
+                    $blank_answers = $_POST['blank_answers'];
+                    $blank_scores = $_POST['blank_scores'];
+
+                    $total_score = 0;
+                    for ($i = 0; $i < count($blank_numbers); $i++) {
+                        if (!empty($blank_numbers[$i]) && !empty($blank_answers[$i]) && !empty($blank_scores[$i])) {
+                            $query = "INSERT INTO matching2_items (id_matching2_main, blank_number, correct_answer, item_score)
+                                      VALUES (:main_id, :blank_num, :answer, :score)";
+                            $stmt = $db->prepare($query);
+                            $stmt->execute([
+                                ':main_id' => $matching2_main_id,
+                                ':blank_num' => intval($blank_numbers[$i]),
+                                ':answer' => $blank_answers[$i],
+                                ':score' => floatval($blank_scores[$i])
+                            ]);
+                            $total_score += floatval($blank_scores[$i]);
+                        }
+                    }
+
+                    // Update question_read with total score
+                    $query = "UPDATE question_read SET question_score = :total_score WHERE id_question_text = :id";
+                    $stmt = $db->prepare($query);
+                    $stmt->execute([':total_score' => $total_score, ':id' => $question_id]);
+
+                } elseif ($question_var == 'matching_words') {
+                    // Validate matching words question fields
+                    if (empty($_POST['mw_corr_variant'])) {
+                        throw new Exception('Düzgün cavablar doldurulmalıdır!');
+                    }
+
+                    // Build variants from individual fields (A-J)
+                    $variants_array = [];
+                    if (!empty($_POST['mw_variant_a'])) $variants_array[] = 'A) ' . trim($_POST['mw_variant_a']);
+                    if (!empty($_POST['mw_variant_b'])) $variants_array[] = 'B) ' . trim($_POST['mw_variant_b']);
+                    if (!empty($_POST['mw_variant_c'])) $variants_array[] = 'C) ' . trim($_POST['mw_variant_c']);
+                    if (!empty($_POST['mw_variant_d'])) $variants_array[] = 'D) ' . trim($_POST['mw_variant_d']);
+                    if (!empty($_POST['mw_variant_e'])) $variants_array[] = 'E) ' . trim($_POST['mw_variant_e']);
+                    if (!empty($_POST['mw_variant_f'])) $variants_array[] = 'F) ' . trim($_POST['mw_variant_f']);
+                    if (!empty($_POST['mw_variant_g'])) $variants_array[] = 'G) ' . trim($_POST['mw_variant_g']);
+                    if (!empty($_POST['mw_variant_h'])) $variants_array[] = 'H) ' . trim($_POST['mw_variant_h']);
+                    if (!empty($_POST['mw_variant_i'])) $variants_array[] = 'I) ' . trim($_POST['mw_variant_i']);
+                    if (!empty($_POST['mw_variant_j'])) $variants_array[] = 'J) ' . trim($_POST['mw_variant_j']);
+
+                    if (empty($variants_array)) {
+                        throw new Exception('Ən azı bir variant doldurulmalıdır!');
+                    }
+
+                    $variants = implode(',', $variants_array);
+
+                    $query = "INSERT INTO matching_questions (id_question_text, variants, corr_variant) VALUES (:id, :variants, :corr_variant)";
+                    $stmt = $db->prepare($query);
+                    $stmt->execute([':id' => $question_id, ':variants' => $variants, ':corr_variant' => trim($_POST['mw_corr_variant'])]);
                 }
 
                 $db->commit();
@@ -328,12 +420,36 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['edit_question'])) {
                     $stmt = $db->prepare($query);
                     $stmt->execute([':corr_v' => $_POST['edit_corr_v'], ':question_id' => $question_id]);
                 } elseif ($question_var == 'matching') {
-                    $query = "UPDATE matching_questions SET variants = :variants, corr_variant = :corr_variant 
+                    $query = "UPDATE matching_questions SET variants = :variants, corr_variant = :corr_variant
                               WHERE id_question_text = :question_id";
                     $stmt = $db->prepare($query);
                     $stmt->execute([
                         ':variants' => $_POST['edit_variants'],
                         ':corr_variant' => $_POST['edit_corr_variant'],
+                        ':question_id' => $question_id
+                    ]);
+                } elseif ($question_var == 'matching_words') {
+                    // Build variants from individual fields (A-J) for matching_words
+                    $variants_array = [];
+                    if (!empty($_POST['edit_mw_variant_a'])) $variants_array[] = 'A) ' . trim($_POST['edit_mw_variant_a']);
+                    if (!empty($_POST['edit_mw_variant_b'])) $variants_array[] = 'B) ' . trim($_POST['edit_mw_variant_b']);
+                    if (!empty($_POST['edit_mw_variant_c'])) $variants_array[] = 'C) ' . trim($_POST['edit_mw_variant_c']);
+                    if (!empty($_POST['edit_mw_variant_d'])) $variants_array[] = 'D) ' . trim($_POST['edit_mw_variant_d']);
+                    if (!empty($_POST['edit_mw_variant_e'])) $variants_array[] = 'E) ' . trim($_POST['edit_mw_variant_e']);
+                    if (!empty($_POST['edit_mw_variant_f'])) $variants_array[] = 'F) ' . trim($_POST['edit_mw_variant_f']);
+                    if (!empty($_POST['edit_mw_variant_g'])) $variants_array[] = 'G) ' . trim($_POST['edit_mw_variant_g']);
+                    if (!empty($_POST['edit_mw_variant_h'])) $variants_array[] = 'H) ' . trim($_POST['edit_mw_variant_h']);
+                    if (!empty($_POST['edit_mw_variant_i'])) $variants_array[] = 'I) ' . trim($_POST['edit_mw_variant_i']);
+                    if (!empty($_POST['edit_mw_variant_j'])) $variants_array[] = 'J) ' . trim($_POST['edit_mw_variant_j']);
+
+                    $variants = implode(',', $variants_array);
+
+                    $query = "UPDATE matching_questions SET variants = :variants, corr_variant = :corr_variant
+                              WHERE id_question_text = :question_id";
+                    $stmt = $db->prepare($query);
+                    $stmt->execute([
+                        ':variants' => $variants,
+                        ':corr_variant' => $_POST['edit_mw_corr_variant'],
                         ':question_id' => $question_id
                     ]);
                 }
@@ -799,8 +915,18 @@ if ($active_file > 0) {
                         </select>
                     </div>
                     <div>
-                        <label for="question_text" class="block text-sm font-semibold text-gray-700 mb-2">Sual mətni</label>
+                        <label for="question_text" class="block text-sm font-semibold text-gray-700 mb-2">
+                            Sual mətni
+                            <span id="matching_words_badge" style="display: none;" class="ml-2 px-2 py-1 bg-purple-100 text-purple-700 text-xs font-bold rounded-full">Matching Words</span>
+                        </label>
                         <textarea class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition duration-200 ease-in-out" id="question_text" name="question_text" rows="4" required></textarea>
+                        <p id="matching_help_text" style="display: none;" class="mt-2 text-xs text-blue-600 bg-blue-50 p-3 rounded-lg border-l-4 border-blue-400">
+                            <strong>📝 Matching Words üçün təlimat:</strong><br>
+                            1️⃣ Pasajda nömrələnmiş boşluqlar istifadə edin: <code class="bg-white px-1 rounded">11) …</code>, <code class="bg-white px-1 rounded">12) …</code><br>
+                            2️⃣ Aşağıda A, B, C, D, E variantlarını doldurun<br>
+                            3️⃣ Düzgün cavablarda uyğunlaşdırma göstərin: <code class="bg-white px-1 rounded">11) D; 12) E</code><br><br>
+                            <strong>Nümunə:</strong> "When they face challenges or experience <strong>11) …</strong>, they may feel <strong>12) …</strong> and lose confidence."
+                        </p>
                     </div>
                     <div>
                         <label for="question_score" class="block text-sm font-semibold text-gray-700 mb-2">Bal</label>
@@ -857,6 +983,118 @@ if ($active_file > 0) {
                             <label for="corr_variant" class="block text-sm font-medium text-gray-700">Düzgün variant <span class="text-red-500">*</span></label>
                             <input type="text" class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 transition duration-200 ease-in-out" id="corr_variant" name="corr_variant" placeholder="düzgün variantı qeyd edin">
                             <p class="mt-2 text-xs text-gray-500">Yuxarıdakı variantlardan biri olmalıdır</p>
+                        </div>
+                    </div>
+
+                    <div id="matching2_fields" style="display: none;" class="space-y-4 p-4 border-t border-gray-200">
+                        <h4 class="font-semibold text-gray-800">Uyğunlaşdırma 2 (Hər boşluq üçün ayrı bal)</h4>
+
+                        <div>
+                            <label for="passage_text" class="block text-sm font-medium text-gray-700">Pasaj mətni (nömrələnmiş boşluqlarla) <span class="text-red-500">*</span></label>
+                            <textarea class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500" id="passage_text" name="passage_text" rows="6" placeholder="The passage discusses... 11) ... and 12) ..."></textarea>
+                            <p class="mt-1 text-xs text-gray-500">Mətndə 11), 12), 13) kimi nömrələnmiş boşluqlar istifadə edin</p>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Hərflə işarələnmiş variantlar (A-J) <span class="text-red-500">*</span></label>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-medium text-gray-600 w-8">A)</span>
+                                    <input type="text" class="flex-1 px-2 py-1 border border-gray-300 rounded" id="m2_variant_a" name="m2_variant_a" placeholder="constructive">
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-medium text-gray-600 w-8">B)</span>
+                                    <input type="text" class="flex-1 px-2 py-1 border border-gray-300 rounded" id="m2_variant_b" name="m2_variant_b" placeholder="achievement">
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-medium text-gray-600 w-8">C)</span>
+                                    <input type="text" class="flex-1 px-2 py-1 border border-gray-300 rounded" id="m2_variant_c" name="m2_variant_c" placeholder="determined">
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-medium text-gray-600 w-8">D)</span>
+                                    <input type="text" class="flex-1 px-2 py-1 border border-gray-300 rounded" id="m2_variant_d" name="m2_variant_d" placeholder="setbacks">
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-medium text-gray-600 w-8">E)</span>
+                                    <input type="text" class="flex-1 px-2 py-1 border border-gray-300 rounded" id="m2_variant_e" name="m2_variant_e" placeholder="devastated">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Boşluqlar və ballar <span class="text-red-500">*</span></label>
+                            <div id="blanks_container" class="space-y-2">
+                                <div class="flex items-center space-x-2 blank-item">
+                                    <input type="number" class="w-20 px-2 py-1 border border-gray-300 rounded" name="blank_numbers[]" placeholder="11" min="1">
+                                    <span class="text-gray-600">)</span>
+                                    <select class="w-24 px-2 py-1 border border-gray-300 rounded" name="blank_answers[]">
+                                        <option value="">Seç</option>
+                                        <option value="A">A</option>
+                                        <option value="B">B</option>
+                                        <option value="C">C</option>
+                                        <option value="D">D</option>
+                                        <option value="E">E</option>
+                                    </select>
+                                    <input type="number" class="w-24 px-2 py-1 border border-gray-300 rounded" name="blank_scores[]" placeholder="Bal" step="0.5" min="0.5" value="1">
+                                    <button type="button" onclick="removeBlank(this)" class="px-2 py-1 bg-red-500 text-white rounded text-xs">×</button>
+                                </div>
+                            </div>
+                            <button type="button" onclick="addBlank()" class="mt-2 px-3 py-1 bg-green-500 text-white rounded text-sm">+ Boşluq əlavə et</button>
+                        </div>
+                    </div>
+
+                    <div id="matching_words_fields" style="display: none;" class="space-y-4 p-4 border-t border-gray-200">
+                        <h4 class="font-semibold text-gray-800">Matching Words</h4>
+                        <div>
+                            <label for="mw_variants" class="block text-sm font-medium text-gray-700">Hərflə işarələnmiş variantlar (A-J) <span class="text-red-500">*</span></label>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-medium text-gray-600 w-8">A)</span>
+                                    <input type="text" class="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500" id="mw_variant_a" name="mw_variant_a" placeholder="constructive">
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-medium text-gray-600 w-8">B)</span>
+                                    <input type="text" class="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500" id="mw_variant_b" name="mw_variant_b" placeholder="achievement">
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-medium text-gray-600 w-8">C)</span>
+                                    <input type="text" class="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500" id="mw_variant_c" name="mw_variant_c" placeholder="determined">
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-medium text-gray-600 w-8">D)</span>
+                                    <input type="text" class="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500" id="mw_variant_d" name="mw_variant_d" placeholder="setbacks">
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-medium text-gray-600 w-8">E)</span>
+                                    <input type="text" class="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500" id="mw_variant_e" name="mw_variant_e" placeholder="devastated">
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-medium text-gray-600 w-8">F)</span>
+                                    <input type="text" class="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500" id="mw_variant_f" name="mw_variant_f" placeholder="motivated">
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-medium text-gray-600 w-8">G)</span>
+                                    <input type="text" class="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500" id="mw_variant_g" name="mw_variant_g" placeholder="resilient">
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-medium text-gray-600 w-8">H)</span>
+                                    <input type="text" class="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500" id="mw_variant_h" name="mw_variant_h" placeholder="persistent">
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-medium text-gray-600 w-8">I)</span>
+                                    <input type="text" class="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500" id="mw_variant_i" name="mw_variant_i" placeholder="confident">
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-medium text-gray-600 w-8">J)</span>
+                                    <input type="text" class="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500" id="mw_variant_j" name="mw_variant_j" placeholder="optimistic">
+                                </div>
+                            </div>
+                            <p class="mt-2 text-xs text-gray-500">Hər variant üçün bir söz və ya ifadə daxil edin (istəyə bağlı)</p>
+                        </div>
+                        <div>
+                            <label for="mw_corr_variant" class="block text-sm font-medium text-gray-700">Düzgün cavablar (nömrə və hərf uyğunlaşdırması) <span class="text-red-500">*</span></label>
+                            <input type="text" class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 transition duration-200 ease-in-out" id="mw_corr_variant" name="mw_corr_variant" placeholder="11) D; 12) E; 13) A; 14) C; 15) B">
+                            <p class="mt-2 text-xs text-gray-500">Nümunə: 11) D; 12) E; 13) A; 14) C; 15) B</p>
                         </div>
                     </div>
                 </div>
@@ -970,8 +1208,18 @@ if ($active_file > 0) {
                     <input type="hidden" name="edit_question_type" id="edit_question_type">
                     
                     <div>
-                        <label for="edit_question_text" class="block text-sm font-semibold text-gray-700 mb-2">Sual mətni</label>
+                        <label for="edit_question_text" class="block text-sm font-semibold text-gray-700 mb-2">
+                            Sual mətni
+                            <span id="edit_matching_words_badge" style="display: none;" class="ml-2 px-2 py-1 bg-purple-100 text-purple-700 text-xs font-bold rounded-full">Matching Words</span>
+                        </label>
                         <textarea class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-transparent transition duration-200 ease-in-out" id="edit_question_text" name="edit_question_text" rows="4" required></textarea>
+                        <p id="edit_matching_help_text" style="display: none;" class="mt-2 text-xs text-blue-600 bg-blue-50 p-3 rounded-lg border-l-4 border-blue-400">
+                            <strong>📝 Matching Words üçün təlimat:</strong><br>
+                            1️⃣ Pasajda nömrələnmiş boşluqlar istifadə edin: <code class="bg-white px-1 rounded">11) …</code>, <code class="bg-white px-1 rounded">12) …</code><br>
+                            2️⃣ Aşağıda A, B, C, D, E variantlarını doldurun<br>
+                            3️⃣ Düzgün cavablarda uyğunlaşdırma göstərin: <code class="bg-white px-1 rounded">11) D; 12) E</code><br><br>
+                            <strong>Nümunə:</strong> "When they face challenges or experience <strong>11) …</strong>, they may feel <strong>12) …</strong> and lose confidence."
+                        </p>
                     </div>
                     
                     <div>
@@ -1029,6 +1277,60 @@ if ($active_file > 0) {
                             <input type="text" class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-yellow-500 focus:border-yellow-500 transition duration-200 ease-in-out" id="edit_corr_variant" name="edit_corr_variant">
                         </div>
                     </div>
+
+                    <div id="edit_matching_words_fields" style="display: none;" class="space-y-4 p-4 border-t border-gray-200">
+                        <h4 class="font-semibold text-gray-800">Matching Words</h4>
+                        <div>
+                            <label for="edit_mw_variants" class="block text-sm font-medium text-gray-700">Hərflə işarələnmiş variantlar (A-J)</label>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-medium text-gray-600 w-8">A)</span>
+                                    <input type="text" class="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-yellow-500 focus:border-yellow-500" id="edit_mw_variant_a" name="edit_mw_variant_a" placeholder="constructive">
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-medium text-gray-600 w-8">B)</span>
+                                    <input type="text" class="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-yellow-500 focus:border-yellow-500" id="edit_mw_variant_b" name="edit_mw_variant_b" placeholder="achievement">
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-medium text-gray-600 w-8">C)</span>
+                                    <input type="text" class="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-yellow-500 focus:border-yellow-500" id="edit_mw_variant_c" name="edit_mw_variant_c" placeholder="determined">
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-medium text-gray-600 w-8">D)</span>
+                                    <input type="text" class="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-yellow-500 focus:border-yellow-500" id="edit_mw_variant_d" name="edit_mw_variant_d" placeholder="setbacks">
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-medium text-gray-600 w-8">E)</span>
+                                    <input type="text" class="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-yellow-500 focus:border-yellow-500" id="edit_mw_variant_e" name="edit_mw_variant_e" placeholder="devastated">
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-medium text-gray-600 w-8">F)</span>
+                                    <input type="text" class="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-yellow-500 focus:border-yellow-500" id="edit_mw_variant_f" name="edit_mw_variant_f" placeholder="motivated">
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-medium text-gray-600 w-8">G)</span>
+                                    <input type="text" class="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-yellow-500 focus:border-yellow-500" id="edit_mw_variant_g" name="edit_mw_variant_g" placeholder="resilient">
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-medium text-gray-600 w-8">H)</span>
+                                    <input type="text" class="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-yellow-500 focus:border-yellow-500" id="edit_mw_variant_h" name="edit_mw_variant_h" placeholder="persistent">
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-medium text-gray-600 w-8">I)</span>
+                                    <input type="text" class="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-yellow-500 focus:border-yellow-500" id="edit_mw_variant_i" name="edit_mw_variant_i" placeholder="confident">
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-medium text-gray-600 w-8">J)</span>
+                                    <input type="text" class="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-yellow-500 focus:border-yellow-500" id="edit_mw_variant_j" name="edit_mw_variant_j" placeholder="optimistic">
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <label for="edit_mw_corr_variant" class="block text-sm font-medium text-gray-700">Düzgün cavablar (nömrə və hərf uyğunlaşdırması)</label>
+                            <input type="text" class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-yellow-500 focus:border-yellow-500 transition duration-200 ease-in-out" id="edit_mw_corr_variant" name="edit_mw_corr_variant" placeholder="11) D; 12) E; 13) A; 14) C; 15) B">
+                            <p class="mt-2 text-xs text-gray-500">Nümunə: 11) D; 12) E; 13) A; 14) C; 15) B</p>
+                        </div>
+                    </div>
                 </div>
                 <div class="flex space-x-3 p-6 bg-gray-50 rounded-b-2xl">
                     <button type="button" @click="editQuestionModal = false" class="flex-1 px-4 py-2.5 bg-gray-200 text-gray-800 rounded-xl font-semibold hover:bg-gray-300 transition-all duration-200 ease-in-out">Ləğv et</button>
@@ -1077,6 +1379,17 @@ if ($active_file > 0) {
                     <div>
                         <h5 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Düzgün Variant</h5>
                         <p id="view_correct_variant" class="mt-1 text-green-700 text-base bg-green-50 p-3 rounded-lg"></p>
+                    </div>
+                </div>
+
+                <div id="view_matching_words_fields" style="display: none;" class="space-y-4 pt-4 border-t border-gray-200">
+                    <div>
+                        <h5 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Hərflə işarələnmiş variantlar</h5>
+                        <div id="view_mw_variants_list" class="mt-2 space-y-1"></div>
+                    </div>
+                    <div>
+                        <h5 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Düzgün cavablar</h5>
+                        <p id="view_mw_correct_variant" class="mt-1 text-green-700 text-base bg-green-50 p-3 rounded-lg"></p>
                     </div>
                 </div>
             </div>
@@ -1130,6 +1443,35 @@ function openFileEditModal(fileId, fileTitle, fileType) {
     }
 }
 
+// Add/Remove blank functions for matching2
+function addBlank() {
+    var container = document.getElementById('blanks_container');
+    var newBlank = document.createElement('div');
+    newBlank.className = 'flex items-center space-x-2 blank-item';
+    newBlank.innerHTML = `
+        <input type="number" class="w-20 px-2 py-1 border border-gray-300 rounded" name="blank_numbers[]" placeholder="11" min="1">
+        <span class="text-gray-600">)</span>
+        <select class="w-24 px-2 py-1 border border-gray-300 rounded" name="blank_answers[]">
+            <option value="">Seç</option>
+            <option value="A">A</option>
+            <option value="B">B</option>
+            <option value="C">C</option>
+            <option value="D">D</option>
+            <option value="E">E</option>
+        </select>
+        <input type="number" class="w-24 px-2 py-1 border border-gray-300 rounded" name="blank_scores[]" placeholder="Bal" step="0.5" min="0.5" value="1">
+        <button type="button" onclick="removeBlank(this)" class="px-2 py-1 bg-red-500 text-white rounded text-xs">×</button>
+    `;
+    container.appendChild(newBlank);
+}
+
+function removeBlank(button) {
+    var container = document.getElementById('blanks_container');
+    if (container.children.length > 1) {
+        button.parentElement.remove();
+    }
+}
+
 function toggleQuestionFields() {
     var questionType = document.getElementById('question_type');
     var selectedOption = questionType.options[questionType.selectedIndex];
@@ -1139,6 +1481,20 @@ function toggleQuestionFields() {
     document.getElementById('multiple_fields').style.display = questionVar === 'multiple' ? 'block' : 'none';
     document.getElementById('open_fields').style.display = questionVar === 'open' ? 'block' : 'none';
     document.getElementById('matching_fields').style.display = questionVar === 'matching' ? 'block' : 'none';
+    document.getElementById('matching2_fields').style.display = questionVar === 'matching2' ? 'block' : 'none';
+    document.getElementById('matching_words_fields').style.display = questionVar === 'matching_words' ? 'block' : 'none';
+
+    // Show/hide matching help text
+    var matchingHelpText = document.getElementById('matching_help_text');
+    if (matchingHelpText) {
+        matchingHelpText.style.display = (questionVar === 'matching_words') ? 'block' : 'none';
+    }
+
+    // Show/hide matching words badge
+    var matchingWordsBadge = document.getElementById('matching_words_badge');
+    if (matchingWordsBadge) {
+        matchingWordsBadge.style.display = (questionVar === 'matching_words') ? 'inline-block' : 'none';
+    }
 
     // Toggle required attributes for multiple choice fields
     ['var_a', 'var_b', 'var_c', 'var_d'].forEach(function(id) {
@@ -1173,12 +1529,35 @@ function toggleQuestionFields() {
             }
         }
     });
+
+    // Toggle required attributes for matching_words question fields
+    var mwCorrVariant = document.getElementById('mw_corr_variant');
+    if (mwCorrVariant) {
+        if (questionVar === 'matching_words') {
+            mwCorrVariant.setAttribute('required', 'required');
+        } else {
+            mwCorrVariant.removeAttribute('required');
+        }
+    }
 }
 
 function toggleEditQuestionFields(questionVar) {
     document.getElementById('edit_multiple_fields').style.display = questionVar === 'multiple' ? 'block' : 'none';
     document.getElementById('edit_open_fields').style.display = questionVar === 'open' ? 'block' : 'none';
     document.getElementById('edit_matching_fields').style.display = questionVar === 'matching' ? 'block' : 'none';
+    document.getElementById('edit_matching_words_fields').style.display = questionVar === 'matching_words' ? 'block' : 'none';
+
+    // Show/hide matching help text in edit modal
+    var editMatchingHelpText = document.getElementById('edit_matching_help_text');
+    if (editMatchingHelpText) {
+        editMatchingHelpText.style.display = questionVar === 'matching_words' ? 'block' : 'none';
+    }
+
+    // Show/hide matching words badge in edit modal
+    var editMatchingWordsBadge = document.getElementById('edit_matching_words_badge');
+    if (editMatchingWordsBadge) {
+        editMatchingWordsBadge.style.display = questionVar === 'matching_words' ? 'inline-block' : 'none';
+    }
 }
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -1237,6 +1616,7 @@ function populateViewModal(data) {
     document.getElementById('view_multiple_fields').style.display = 'none';
     document.getElementById('view_open_fields').style.display = 'none';
     document.getElementById('view_matching_fields').style.display = 'none';
+    document.getElementById('view_matching_words_fields').style.display = 'none';
 
     if (data.question_var === 'multiple') {
         document.getElementById('view_multiple_fields').style.display = 'block';
@@ -1264,6 +1644,26 @@ function populateViewModal(data) {
         document.getElementById('view_matching_fields').style.display = 'block';
         document.getElementById('view_variants').textContent = data.variants || '';
         document.getElementById('view_correct_variant').textContent = data.corr_variant || '';
+    } else if (data.question_var === 'matching_words') {
+        document.getElementById('view_matching_words_fields').style.display = 'block';
+
+        // Parse and display variants for matching_words
+        var variants = data.variants || '';
+        var variantsArray = variants.split(',');
+        var variantsList = document.getElementById('view_mw_variants_list');
+        variantsList.innerHTML = '';
+
+        variantsArray.forEach(function(variant) {
+            variant = variant.trim();
+            if (variant) {
+                var div = document.createElement('div');
+                div.className = 'p-2 bg-gray-100 rounded text-gray-800';
+                div.textContent = variant;
+                variantsList.appendChild(div);
+            }
+        });
+
+        document.getElementById('view_mw_correct_variant').textContent = data.corr_variant || '';
     }
 }
 
@@ -1286,6 +1686,32 @@ function populateEditModal(data) {
     } else if (data.question_var === 'matching') {
         document.getElementById('edit_variants').value = data.variants || '';
         document.getElementById('edit_corr_variant').value = data.corr_variant || '';
+    } else if (data.question_var === 'matching_words') {
+        // Parse variants string and populate individual fields for matching_words
+        var variants = data.variants || '';
+        var variantsArray = variants.split(',');
+
+        // Clear all fields first
+        ['a','b','c','d','e','f','g','h','i','j'].forEach(function(letter) {
+            var field = document.getElementById('edit_mw_variant_' + letter);
+            if (field) field.value = '';
+        });
+
+        // Parse each variant and populate the corresponding field
+        variantsArray.forEach(function(variant) {
+            variant = variant.trim();
+            var letters = ['A','B','C','D','E','F','G','H','I','J'];
+            letters.forEach(function(letter) {
+                if (variant.startsWith(letter + ') ')) {
+                    var field = document.getElementById('edit_mw_variant_' + letter.toLowerCase());
+                    if (field) {
+                        field.value = variant.substring(3);
+                    }
+                }
+            });
+        });
+
+        document.getElementById('edit_mw_corr_variant').value = data.corr_variant || '';
     }
 }
 </script>

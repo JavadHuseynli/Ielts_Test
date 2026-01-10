@@ -21,9 +21,9 @@ function loginUser($username, $password, $db) {
         error_log("Verilənlər bazası əlaqəsi yaradılmadı");
         return false;
     }
-    
+
     try {
-        $query = "SELECT id_users, f_name, username, password, status, group_id, subject_id FROM users WHERE username = :username";
+        $query = "SELECT id_users, f_name, username, password, status, group_id FROM users WHERE username = :username";
         $stmt = $db->prepare($query);
         $stmt->bindParam(":username", $username);
         $stmt->execute();
@@ -38,12 +38,23 @@ function loginUser($username, $password, $db) {
                 $_SESSION['role'] = $row['status'];
                 $_SESSION['status'] = $row['status'];
                 $_SESSION['group_id'] = $row['group_id'];
-                $_SESSION['subject_id'] = $row['subject_id'];
+
+                // If user is a teacher, fetch their subjects from teacher_subjects table
+                if ($row['status'] == 'muellim') {
+                    $subject_query = "SELECT subject_id FROM teacher_subjects WHERE teacher_id = :teacher_id";
+                    $subject_stmt = $db->prepare($subject_query);
+                    $subject_stmt->bindParam(":teacher_id", $row['id_users']);
+                    $subject_stmt->execute();
+                    $teacher_subjects = $subject_stmt->fetchAll(PDO::FETCH_COLUMN);
+                    $_SESSION['teacher_subjects'] = $teacher_subjects;
+                } else {
+                    $_SESSION['teacher_subjects'] = [];
+                }
 
                 return true;
             }
         }
-        
+
         return false;
     } catch (PDOException $e) {
         error_log("Giriş xətası: " . $e->getMessage());

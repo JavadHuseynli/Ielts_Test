@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="az">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IELTS İmtahan</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        * { font-family: 'Inter', sans-serif; }
+
+        .radio-option input[type="radio"]:checked + .radio-circle {
+            border-color: #3b82f6;
+            background: #3b82f6;
+        }
+
+        .radio-option input[type="radio"]:checked + .radio-circle::after {
+            content: '';
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            background: white;
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .question-nav-item {
+            transition: all 0.2s;
+        }
+
+        .question-nav-item.answered {
+            background: #10b981;
+            color: white;
+        }
+
+        .question-nav-item.current {
+            background: #3b82f6;
+            color: white;
+            transform: scale(1.15);
+        }
+    </style>
+</head>
+<body class="bg-gray-50 h-screen flex flex-col">
+
+    <!-- Top Bar -->
+    <div class="bg-white border-b border-gray-200 px-6 py-3 shadow-sm">
+        <div class="flex items-center justify-between">
+            <h1 class="text-xl font-bold text-gray-700">IELTS Reading Test</h1>
+            <div class="flex items-center gap-6">
+                <div class="flex items-center gap-2 text-gray-600">
+                    <i class="fas fa-clock"></i>
+                    <span class="font-semibold">29:45</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-white text-sm">
+                        <i class="fas fa-user"></i>
+                    </div>
+                    <span class="text-sm text-gray-700">Student</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="flex-1 flex overflow-hidden">
+
+        <!-- Left Panel - Reading Material -->
+        <div class="w-1/2 bg-white border-r border-gray-200 flex flex-col">
+            <!-- Section Tabs -->
+            <div class="flex border-b border-gray-200 bg-gray-50">
+                <button class="px-6 py-3 font-semibold text-blue-600 border-b-2 border-blue-600">
+                    <i class="fas fa-book-open mr-2"></i>Reading
+                </button>
+                <button class="px-6 py-3 font-semibold text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-headphones mr-2"></i>Listening
+                </button>
+            </div>
+
+            <!-- Reading Content -->
+            <div class="flex-1 overflow-y-auto p-8">
+                <div class="max-w-3xl">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-4">The Industrial Revolution</h2>
+
+                    <div class="prose prose-lg">
+                        <p class="text-gray-700 leading-relaxed mb-4">
+                            The Industrial Revolution was a period of major industrialization and innovation
+                            that took place during the late 1700s and early 1800s. The Industrial Revolution
+                            began in Great Britain and quickly spread throughout the world.
+                        </p>
+
+                        <p class="text-gray-700 leading-relaxed mb-4">
+                            The American Industrial Revolution, commonly referred to as the Second Industrial
+                            Revolution, started sometime between 1820 and 1870. This period saw the
+                            mechanization of agriculture and textile manufacturing and a revolution in power,
+                            including steamships and railroads, that affected social, cultural and economic
+                            conditions.
+                        </p>
+
+                        <p class="text-gray-700 leading-relaxed mb-4">
+                            Though the United States borrowed significantly from Europe's technological
+                            advancements during the Industrial Revolution, American inventors contributed to
+                            this international period of economic and industrial growth. The inventors and
+                            innovations of this time period changed the world forever.
+                        </p>
+
+                        <p class="text-gray-700 leading-relaxed mb-4">
+                            Before the Industrial Revolution, people wove textiles by hand. Beginning in the
+                            middle 1700s, machines did this and other jobs as well. The Industrial Revolution
+                            started in England and spread to the rest of Europe and the United States.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel - Questions -->
+        <div class="w-1/2 bg-gray-50 flex flex-col">
+
+            <!-- Question Area -->
+            <div class="flex-1 overflow-y-auto p-8">
+                <div class="max-w-2xl mx-auto">
+
+                    <!-- Question Header -->
+                    <div class="mb-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <span class="text-sm font-medium text-gray-500">Sual 1/15</span>
+                            <span class="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-semibold">
+                                Reading
+                            </span>
+                        </div>
+                        <h3 class="text-xl font-semibold text-gray-800">
+                            When did the Industrial Revolution begin in Great Britain?
+                        </h3>
+                    </div>
+
+                    <!-- Answer Options -->
+                    <div class="space-y-3">
+                        <label class="radio-option flex items-center gap-4 p-4 rounded-xl border-2 border-gray-200 cursor-pointer hover:border-blue-300 hover:bg-blue-50 transition">
+                            <input type="radio" name="answer" value="a" class="hidden">
+                            <div class="radio-circle relative w-5 h-5 border-2 border-gray-300 rounded-full flex-shrink-0"></div>
+                            <span class="text-gray-700">Early 1700s</span>
+                        </label>
+
+                        <label class="radio-option flex items-center gap-4 p-4 rounded-xl border-2 border-gray-200 cursor-pointer hover:border-blue-300 hover:bg-blue-50 transition">
+                            <input type="radio" name="answer" value="b" class="hidden">
+                            <div class="radio-circle relative w-5 h-5 border-2 border-gray-300 rounded-full flex-shrink-0"></div>
+                            <span class="text-gray-700">Late 1700s and early 1800s</span>
+                        </label>
+
+                        <label class="radio-option flex items-center gap-4 p-4 rounded-xl border-2 border-gray-200 cursor-pointer hover:border-blue-300 hover:bg-blue-50 transition">
+                            <input type="radio" name="answer" value="c" class="hidden">
+                            <div class="radio-circle relative w-5 h-5 border-2 border-gray-300 rounded-full flex-shrink-0"></div>
+                            <span class="text-gray-700">Between 1820 and 1870</span>
+                        </label>
+
+                        <label class="radio-option flex items-center gap-4 p-4 rounded-xl border-2 border-gray-200 cursor-pointer hover:border-blue-300 hover:bg-blue-50 transition">
+                            <input type="radio" name="answer" value="d" class="hidden">
+                            <div class="radio-circle relative w-5 h-5 border-2 border-gray-300 rounded-full flex-shrink-0"></div>
+                            <span class="text-gray-700">Middle 1700s</span>
+                        </label>
+                    </div>
+
+                    <!-- Navigation Buttons -->
+                    <div class="flex gap-3 mt-8">
+                        <button class="flex-1 px-6 py-3 bg-gray-200 text-gray-700 rounded-xl font-semibold hover:bg-gray-300 transition">
+                            <i class="fas fa-arrow-left mr-2"></i>Əvvəlki
+                        </button>
+                        <button class="flex-1 px-6 py-3 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 transition">
+                            Növbəti<i class="fas fa-arrow-right ml-2"></i>
+                        </button>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Bottom - Question Navigation -->
+            <div class="border-t border-gray-200 bg-white p-6">
+                <div class="max-w-2xl mx-auto">
+                    <div class="flex items-center justify-between mb-3">
+                        <h4 class="font-semibold text-gray-700">Suallar</h4>
+                        <div class="flex items-center gap-4 text-sm">
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 bg-green-500 rounded-full"></div>
+                                <span class="text-gray-600">Cavablandı</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 bg-blue-500 rounded-full"></div>
+                                <span class="text-gray-600">Cari</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 bg-gray-200 rounded-full"></div>
+                                <span class="text-gray-600">Cavablanmayıb</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Reading Section -->
+                    <div class="mb-4">
+                        <div class="text-xs font-semibold text-gray-500 mb-2 flex items-center gap-2">
+                            <i class="fas fa-book-open"></i>
+                            READING (1-10)
+                        </div>
+                        <div class="grid grid-cols-10 gap-2">
+                            <button class="question-nav-item current w-10 h-10 rounded-lg font-semibold text-sm bg-gray-100 hover:bg-gray-200 transition">1</button>
+                            <button class="question-nav-item answered w-10 h-10 rounded-lg font-semibold text-sm bg-gray-100 hover:bg-gray-200 transition">2</button>
+                            <button class="question-nav-item w-10 h-10 rounded-lg font-semibold text-sm bg-gray-100 hover:bg-gray-200 transition">3</button>
+                            <button class="question-nav-item w-10 h-10 rounded-lg font-semibold text-sm bg-gray-100 hover:bg-gray-200 transition">4</button>
+                            <button class="question-nav-item w-10 h-10 rounded-lg font-semibold text-sm bg-gray-100 hover:bg-gray-200 transition">5</button>
+                            <button class="question-nav-item w-10 h-10 rounded-lg font-semibold text-sm bg-gray-100 hover:bg-gray-200 transition">6</button>
+                            <button class="question-nav-item w-10 h-10 rounded-lg font-semibold text-sm bg-gray-100 hover:bg-gray-200 transition">7</button>
+                            <button class="question-nav-item w-10 h-10 rounded-lg font-semibold text-sm bg-gray-100 hover:bg-gray-200 transition">8</button>
+                            <button class="question-nav-item w-10 h-10 rounded-lg font-semibold text-sm bg-gray-100 hover:bg-gray-200 transition">9</button>
+                            <button class="question-nav-item w-10 h-10 rounded-lg font-semibold text-sm bg-gray-100 hover:bg-gray-200 transition">10</button>
+                        </div>
+                    </div>
+
+                    <!-- Listening Section -->
+                    <div class="mb-4">
+                        <div class="text-xs font-semibold text-gray-500 mb-2 flex items-center gap-2">
+                            <i class="fas fa-headphones"></i>
+                            LISTENING (11-15)
+                        </div>
+                        <div class="grid grid-cols-10 gap-2">
+                            <button class="question-nav-item w-10 h-10 rounded-lg font-semibold text-sm bg-gray-100 hover:bg-gray-200 transition">11</button>
+                            <button class="question-nav-item w-10 h-10 rounded-lg font-semibold text-sm bg-gray-100 hover:bg-gray-200 transition">12</button>
+                            <button class="question-nav-item w-10 h-10 rounded-lg font-semibold text-sm bg-gray-100 hover:bg-gray-200 transition">13</button>
+                            <button class="question-nav-item w-10 h-10 rounded-lg font-semibold text-sm bg-gray-100 hover:bg-gray-200 transition">14</button>
+                            <button class="question-nav-item w-10 h-10 rounded-lg font-semibold text-sm bg-gray-100 hover:bg-gray-200 transition">15</button>
+                        </div>
+                    </div>
+
+                    <!-- Submit Button -->
+                    <button class="w-full py-3 bg-green-600 text-white rounded-xl font-semibold hover:bg-green-700 transition mt-4">
+                        <i class="fas fa-check-circle mr-2"></i>İmtahanı Bitir
+                    </button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // Radio button selection
+        document.querySelectorAll('.radio-option').forEach(option => {
+            option.addEventListener('click', function() {
+                const radio = this.querySelector('input[type="radio"]');
+                radio.checked = true;
+
+                // Mark question as answered
+                document.querySelector('.question-nav-item.current').classList.add('answered');
+            });
+        });
+
+        // Question navigation
+        document.querySelectorAll('.question-nav-item').forEach((btn, index) => {
+            btn.addEventListener('click', function() {
+                // Remove current from all
+                document.querySelectorAll('.question-nav-item').forEach(b => b.classList.remove('current'));
+
+                // Add current to clicked
+                this.classList.add('current');
+
+                // TODO: Load question data for this index
+                console.log('Loading question', index + 1);
+            });
+        });
+    </script>
+
+</body>
+</html>

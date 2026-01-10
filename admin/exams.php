@@ -6,9 +6,9 @@ require_once "../includes/auth.php";
 
 checkLogin();
 // Admins and Prorektors can manage exams
-// Kafedra and Muellim can view exams, but not modify
+// Dekan, Kafedra and Muellim can view exams, but not modify
 $can_manage_exams = is_admin() || is_prorektor();
-$can_view_results_for_all_exams = is_admin() || is_prorektor() || is_kafedra();
+$can_view_results_for_all_exams = is_admin() || is_prorektor() || is_dekan() || is_kafedra();
 $can_view_own_subject_exams = is_teacher();
 
 if (!$can_manage_exams && !$can_view_results_for_all_exams && !$can_view_own_subject_exams) {
@@ -173,12 +173,12 @@ $subject_filter = isset($_GET['subject']) ? $_GET['subject'] : '';
 $group_filter = isset($_GET['group']) ? $_GET['group'] : '';
 
 // Prorektor cannot filter by status (always shows completed exams only)
-if (is_prorektor()) {
+if (is_prorektor() || is_dekan()) {
     $status_filter = '';
 }
 
 // Pagination
-$items_per_page = 10;
+$items_per_page = 25;
 $page = isset($_GET['page']) && is_numeric($_GET['page']) ? (int)$_GET['page'] : 1;
 $offset = ($page - 1) * $items_per_page;
 
@@ -192,7 +192,7 @@ $count_query = "SELECT COUNT(*) as total
 $params = array();
 
 // Prorektor only sees completed exams with answers
-if (is_prorektor()) {
+if (is_prorektor() || is_dekan()) {
     $count_query .= " AND e.status = 'completed' AND EXISTS (
         SELECT 1 FROM answers a WHERE a.exam_id = e.id_exam LIMIT 1
     )";
@@ -227,14 +227,15 @@ $total_exams = $count_stmt->fetch(PDO::FETCH_ASSOC)['total'];
 $total_pages = ceil($total_exams / $items_per_page);
 
 // Main query with pagination
-$query = "SELECT e.id_exam, e.date_exam, e.datetime, e.status, e.id_subject, s.subjectname, sg.group_number
+$query = "SELECT e.id_exam, e.date_exam, e.datetime, e.status, e.id_subject, s.subjectname, sg.group_number,
+          e.confirmed_by_dekan, e.confirmed_at_dekan, e.confirmed_by_kafedra, e.confirmed_at_kafedra
           FROM exams e
           JOIN subjects s ON e.id_subject = s.id_subject
           JOIN student_group sg ON e.id_student_group = sg.id_student_group
           WHERE 1=1";
 
 // Prorektor only sees completed exams with answers
-if (is_prorektor()) {
+if (is_prorektor() || is_dekan()) {
     $query .= " AND e.status = 'completed' AND EXISTS (
         SELECT 1 FROM answers a WHERE a.exam_id = e.id_exam LIMIT 1
     )";
@@ -284,65 +285,141 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
 
-.exam-gradient {
-    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+/* Modern Animated Background */
+body {
+    position: relative;
+    overflow-x: hidden;
 }
 
+body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: #ffffff;
+    z-index: -2;
+}
+
+body::after {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    z-index: -1;
+}
+
+@keyframes gradientShift {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+}
+
+@keyframes float {
+    0%, 100% { transform: translateY(0px) rotate(0deg); }
+    33% { transform: translateY(-20px) rotate(5deg); }
+    66% { transform: translateY(10px) rotate(-5deg); }
+}
+
+/* Glassmorphism Cards */
 .filter-card {
-    background: rgba(255, 255, 255, 0.03);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(249, 250, 251, 0.95);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(147, 51, 234, 0.2);
+    box-shadow: 0 8px 32px 0 rgba(147, 51, 234, 0.1);
 }
 
 .stat-box {
-    background: linear-gradient(135deg, rgba(240, 147, 251, 0.1) 0%, rgba(245, 87, 108, 0.1) 100%);
-    border: 1px solid rgba(240, 147, 251, 0.2);
-    transition: all 0.3s ease;
+    background: linear-gradient(135deg, rgba(249, 250, 251, 0.95) 0%, rgba(243, 244, 246, 0.95) 100%);
+    backdrop-filter: blur(10px) saturate(180%);
+    -webkit-backdrop-filter: blur(10px) saturate(180%);
+    border: 1px solid rgba(147, 51, 234, 0.15);
+    box-shadow: 0 8px 32px 0 rgba(147, 51, 234, 0.1);
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
 .stat-box:hover {
-    background: linear-gradient(135deg, rgba(240, 147, 251, 0.2) 0%, rgba(245, 87, 108, 0.2) 100%);
-    transform: translateY(-2px);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(249, 250, 251, 0.98) 100%);
+    transform: translateY(-8px) scale(1.02);
+    box-shadow: 0 12px 48px 0 rgba(147, 51, 234, 0.2);
 }
 
 .exam-table {
-    background: white;
-    border: 1px solid #e5e7eb;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
 }
 
 .exam-row {
-    border-bottom: 1px solid #f3f4f6;
-    transition: all 0.2s ease;
+    border-bottom: 1px solid rgba(243, 244, 246, 0.5);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .exam-row:hover {
-    background: #fdf2f8;
+    background: linear-gradient(90deg, rgba(253, 242, 248, 0.5) 0%, rgba(240, 249, 255, 0.5) 100%);
+    transform: scale(1.01);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
 .status-pending {
-    background: linear-gradient(135deg, rgba(251, 191, 36, 0.2) 0%, rgba(245, 158, 11, 0.2) 100%);
-    color: #fbbf24;
-    border: 1px solid rgba(251, 191, 36, 0.3);
+    background: linear-gradient(135deg, rgba(251, 191, 36, 0.25) 0%, rgba(245, 158, 11, 0.25) 100%);
+    backdrop-filter: blur(8px);
+    color: #f59e0b;
+    border: 1px solid rgba(251, 191, 36, 0.4);
+    box-shadow: 0 4px 12px rgba(251, 191, 36, 0.2);
+    font-weight: 600;
 }
 
 .status-in-progress {
-    background: linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(21, 128, 61, 0.2) 100%);
-    color: #22c55e;
-    border: 1px solid rgba(34, 197, 94, 0.3);
+    background: linear-gradient(135deg, rgba(34, 197, 94, 0.25) 0%, rgba(21, 128, 61, 0.25) 100%);
+    backdrop-filter: blur(8px);
+    color: #10b981;
+    border: 1px solid rgba(34, 197, 94, 0.4);
+    box-shadow: 0 4px 12px rgba(34, 197, 94, 0.2);
+    font-weight: 600;
 }
 
 .status-completed {
-    background: linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(37, 99, 235, 0.2) 100%);
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.25) 0%, rgba(37, 99, 235, 0.25) 100%);
+    backdrop-filter: blur(8px);
     color: #3b82f6;
-    border: 1px solid rgba(59, 130, 246, 0.3);
+    border: 1px solid rgba(59, 130, 246, 0.4);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+    font-weight: 600;
 }
 
 .action-button {
-    transition: all 0.2s ease;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+.action-button::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    transition: width 0.6s, height 0.6s;
+}
+
+.action-button:hover::before {
+    width: 300px;
+    height: 300px;
 }
 
 .action-button:hover {
-    transform: scale(1.05);
+    transform: translateY(-3px) scale(1.05);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
 }
 
 .notification {
@@ -359,7 +436,68 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
         transform: translateY(0);
     }
 }
+
+/* Modern Pagination */
+.pagination-btn {
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    transition: all 0.3s ease;
+}
+
+.pagination-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.25);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.pagination-btn.active {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    box-shadow: 0 4px 16px rgba(102, 126, 234, 0.4);
+}
+
+/* Floating Shapes */
+.floating-shape {
+    position: fixed;
+    border-radius: 50%;
+    opacity: 0.1;
+    pointer-events: none;
+    z-index: -1;
+}
+
+.shape-1 {
+    width: 300px;
+    height: 300px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    top: 10%;
+    left: -150px;
+    animation: float 25s ease-in-out infinite;
+}
+
+.shape-2 {
+    width: 400px;
+    height: 400px;
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    top: 50%;
+    right: -200px;
+    animation: float 30s ease-in-out infinite reverse;
+}
+
+.shape-3 {
+    width: 250px;
+    height: 250px;
+    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    bottom: 10%;
+    left: 20%;
+    animation: float 20s ease-in-out infinite;
+}
 </style>
+
+<!-- Floating Background Shapes -->
+<div class="floating-shape shape-1"></div>
+<div class="floating-shape shape-2"></div>
+<div class="floating-shape shape-3"></div>
 
 <div class="p-6" x-data="{ showModal: false, showNotification: <?php echo !empty($message) ? 'true' : 'false'; ?> }">
 
@@ -394,14 +532,14 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
     <!-- Header -->
     <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-8">
         <div>
-            <h1 class="text-4xl font-extrabold bg-gradient-to-r from-pink-400 via-purple-400 to-indigo-400 bg-clip-text text-transparent mb-2" style="font-family: 'Space Grotesk', sans-serif;">
+            <h1 class="text-4xl font-extrabold bg-gradient-to-r from-purple-700 via-purple-600 to-purple-800 bg-clip-text text-transparent mb-2" style="font-family: 'Space Grotesk', sans-serif;">
                 İmtahanların İdarə Edilməsi
             </h1>
-            <p class="text-gray-400 font-medium">İmtahanları yaradın, idarə edin və nəticələrə baxın</p>
+            <p class="text-gray-600 font-medium">İmtahanları yaradın, idarə edin və nəticələrə baxın</p>
         </div>
         <?php if ($can_manage_exams): ?>
         <button @click="showModal = true"
-                class="mt-4 lg:mt-0 exam-gradient text-white px-6 py-3 rounded-xl font-semibold shadow-lg hover:shadow-pink-500/50 transition-all duration-300 hover:scale-105 flex items-center space-x-2">
+                class="mt-4 lg:mt-0 bg-gradient-to-r from-purple-600 to-purple-700 text-white px-6 py-3 rounded-xl font-semibold shadow-lg hover:shadow-purple-500/50 transition-all duration-300 hover:scale-105 flex items-center space-x-2">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
             </svg>
@@ -415,8 +553,8 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
         <div class="stat-box rounded-2xl p-6">
             <div class="flex items-center justify-between">
                 <div>
-                    <p class="text-gray-400 text-sm font-medium mb-1">Gözləyir</p>
-                    <p class="text-4xl font-bold text-yellow-400"><?php echo $stats['pending_count']; ?></p>
+                    <p class="text-gray-600 text-sm font-medium mb-1">Gözləyir</p>
+                    <p class="text-4xl font-bold text-yellow-600"><?php echo $stats['pending_count']; ?></p>
                 </div>
                 <div class="w-16 h-16 bg-gradient-to-br from-yellow-500 to-orange-500 rounded-2xl flex items-center justify-center">
                     <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -429,8 +567,8 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
         <div class="stat-box rounded-2xl p-6">
             <div class="flex items-center justify-between">
                 <div>
-                    <p class="text-gray-400 text-sm font-medium mb-1">Davam edir</p>
-                    <p class="text-4xl font-bold text-green-400"><?php echo $stats['in_progress_count']; ?></p>
+                    <p class="text-gray-600 text-sm font-medium mb-1">Davam edir</p>
+                    <p class="text-4xl font-bold text-green-600"><?php echo $stats['in_progress_count']; ?></p>
                 </div>
                 <div class="w-16 h-16 bg-gradient-to-br from-green-500 to-emerald-500 rounded-2xl flex items-center justify-center">
                     <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -444,10 +582,10 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
         <div class="stat-box rounded-2xl p-6">
             <div class="flex items-center justify-between">
                 <div>
-                    <p class="text-gray-400 text-sm font-medium mb-1">Tamamlanıb</p>
-                    <p class="text-4xl font-bold text-blue-400"><?php echo $stats['completed_count']; ?></p>
+                    <p class="text-gray-600 text-sm font-medium mb-1">Tamamlanıb</p>
+                    <p class="text-4xl font-bold text-purple-600"><?php echo $stats['completed_count']; ?></p>
                 </div>
-                <div class="w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-2xl flex items-center justify-center">
+                <div class="w-16 h-16 bg-gradient-to-br from-purple-500 to-purple-700 rounded-2xl flex items-center justify-center">
                     <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                     </svg>
@@ -458,12 +596,12 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
 
     <!-- Filters -->
     <div class="filter-card rounded-2xl p-6 mb-8">
-        <h3 class="text-lg font-semibold text-white mb-4">Filtrlər</h3>
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">Filtrlər</h3>
         <form method="get" action="" class="grid grid-cols-1 md:grid-cols-<?php echo is_prorektor() ? '3' : '4'; ?> gap-4">
             <?php if (!is_prorektor()): ?>
             <div>
-                <label for="status" class="block text-sm font-medium text-gray-400 mb-2">Status</label>
-                <select name="status" id="status" class="w-full bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all">
+                <label for="status" class="block text-sm font-medium text-gray-700 mb-2">Status</label>
+                <select name="status" id="status" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-2.5 text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all">
                     <option value="">Hamısı</option>
                     <option value="pending" <?php echo $status_filter == 'pending' ? 'selected' : ''; ?>>Gözləyir</option>
                     <option value="in_progress" <?php echo $status_filter == 'in_progress' ? 'selected' : ''; ?>>Davam edir</option>
@@ -473,8 +611,8 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
             <?php endif; ?>
 
             <div>
-                <label for="subject" class="block text-sm font-medium text-gray-400 mb-2">Fənn</label>
-                <select name="subject" id="subject" class="w-full bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all" <?php echo is_teacher() ? 'disabled' : ''; ?>>
+                <label for="subject" class="block text-sm font-medium text-gray-700 mb-2">Fənn</label>
+                <select name="subject" id="subject" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-2.5 text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" <?php echo is_teacher() ? 'disabled' : ''; ?>>
                     <option value="">Hamısı</option>
                     <?php foreach ($subjects as $subject_item): ?>
                         <option value="<?php echo $subject_item['id_subject']; ?>" <?php echo $subject_filter == $subject_item['id_subject'] ? 'selected' : ''; ?> <?php echo (is_teacher() && $subject_item['id_subject'] != $_SESSION['subject_id']) ? 'disabled' : ''; ?>>
@@ -488,8 +626,8 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
             </div>
 
             <div>
-                <label for="group" class="block text-sm font-medium text-gray-400 mb-2">Qrup</label>
-                <select name="group" id="group" class="w-full bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all">
+                <label for="group" class="block text-sm font-medium text-gray-700 mb-2">Qrup</label>
+                <select name="group" id="group" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-2.5 text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all">
                     <option value="">Hamısı</option>
                     <?php foreach ($groups as $group_item): ?>
                         <option value="<?php echo $group_item['id_student_group']; ?>" <?php echo $group_filter == $group_item['id_student_group'] ? 'selected' : ''; ?>>
@@ -500,10 +638,10 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
             </div>
 
             <div class="flex items-end space-x-2">
-                <button type="submit" class="flex-1 exam-gradient text-white px-6 py-2.5 rounded-xl font-semibold hover:shadow-pink-500/50 transition-all">
+                <button type="submit" class="flex-1 bg-gradient-to-r from-purple-600 to-purple-700 text-white px-6 py-2.5 rounded-xl font-semibold hover:shadow-purple-500/50 transition-all">
                     Filtr
                 </button>
-                <a href="exams.php" class="px-6 py-2.5 bg-gray-700 text-white rounded-xl font-semibold hover:bg-gray-600 transition-all">
+                <a href="exams.php" class="px-6 py-2.5 bg-gray-200 text-gray-700 rounded-xl font-semibold hover:bg-gray-300 transition-all">
                     Sıfırla
                 </a>
             </div>
@@ -522,13 +660,14 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
                         <th class="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Tarix</th>
                         <th class="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Saat</th>
                         <th class="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Status</th>
+                        <th class="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Təsdiq Statusu</th>
                         <th class="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Əməliyyatlar</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if (empty($exams)): ?>
                         <tr class="exam-row">
-                            <td colspan="7" class="px-6 py-12 text-center text-gray-500">
+                            <td colspan="8" class="px-6 py-12 text-center text-gray-500">
                                 <svg class="w-16 h-16 mx-auto mb-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
                                 </svg>
@@ -560,6 +699,63 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
                                     }
                                     ?>
                                     <span class="px-3 py-1.5 rounded-lg text-xs font-semibold <?php echo $statusClass; ?>"><?php echo $statusText; ?></span>
+                                </td>
+                                <td class="px-6 py-4">
+                                    <?php
+                                    $dekanConfirmed = !empty($exam['confirmed_by_dekan']);
+                                    $kafedraConfirmed = !empty($exam['confirmed_by_kafedra']);
+                                    $bothConfirmed = $dekanConfirmed && $kafedraConfirmed;
+
+                                    if ($exam['status'] == 'completed'):
+                                        if ($bothConfirmed):
+                                    ?>
+                                        <div class="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-3 py-2 rounded-lg text-xs font-bold flex items-center space-x-1">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                            </svg>
+                                            <span>TAM TƏSDİQLƏNİB</span>
+                                        </div>
+                                    <?php
+                                        elseif ($dekanConfirmed && !$kafedraConfirmed):
+                                    ?>
+                                        <div class="bg-gradient-to-r from-yellow-500 to-orange-500 text-white px-3 py-2 rounded-lg text-xs font-bold">
+                                            <div class="flex items-center space-x-1 mb-1">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                                </svg>
+                                                <span>Kafedra gözlənilir</span>
+                                            </div>
+                                            <div class="text-[10px] opacity-80">✓ Dekan təsdiq edib</div>
+                                        </div>
+                                    <?php
+                                        elseif (!$dekanConfirmed && $kafedraConfirmed):
+                                    ?>
+                                        <div class="bg-gradient-to-r from-yellow-500 to-orange-500 text-white px-3 py-2 rounded-lg text-xs font-bold">
+                                            <div class="flex items-center space-x-1 mb-1">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                                </svg>
+                                                <span>Dekan gözlənilir</span>
+                                            </div>
+                                            <div class="text-[10px] opacity-80">✓ Kafedra təsdiq edib</div>
+                                        </div>
+                                    <?php
+                                        else:
+                                    ?>
+                                        <div class="bg-gradient-to-r from-red-500 to-pink-600 text-white px-3 py-2 rounded-lg text-xs font-bold">
+                                            <div class="flex items-center space-x-1">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                                                </svg>
+                                                <span>Hər iki təsdiq gözlənilir</span>
+                                            </div>
+                                        </div>
+                                    <?php
+                                        endif;
+                                    else:
+                                    ?>
+                                        <span class="text-gray-400 text-xs">-</span>
+                                    <?php endif; ?>
                                 </td>
                                 <td class="px-6 py-4">
                                     <div class="flex space-x-2">
@@ -616,7 +812,7 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
     <div class="flex justify-center items-center space-x-2 mt-8">
         <?php if ($page > 1): ?>
             <a href="?page=<?php echo $page - 1; ?><?php echo !empty($status_filter) ? '&status=' . $status_filter : ''; ?><?php echo !empty($subject_filter) ? '&subject=' . $subject_filter : ''; ?><?php echo !empty($group_filter) ? '&group=' . $group_filter : ''; ?>"
-               class="px-4 py-2 exam-gradient text-white rounded-lg hover:shadow-pink-500/50 transition-all font-medium">
+               class="px-4 py-2 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-lg hover:shadow-purple-500/50 transition-all font-medium">
                 ← Əvvəlki
             </a>
         <?php endif; ?>
@@ -635,7 +831,7 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
 
             <?php for ($i = $start_page; $i <= $end_page; $i++): ?>
                 <a href="?page=<?php echo $i; ?><?php echo !empty($status_filter) ? '&status=' . $status_filter : ''; ?><?php echo !empty($subject_filter) ? '&subject=' . $subject_filter : ''; ?><?php echo !empty($group_filter) ? '&group=' . $group_filter : ''; ?>"
-                   class="px-4 py-2 <?php echo $i == $page ? 'exam-gradient text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'; ?> rounded-lg transition-all font-medium">
+                   class="px-4 py-2 <?php echo $i == $page ? 'bg-gradient-to-r from-purple-600 to-purple-700 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'; ?> rounded-lg transition-all font-medium">
                     <?php echo $i; ?>
                 </a>
             <?php endfor; ?>
@@ -644,13 +840,13 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
                 <?php if ($end_page < $total_pages - 1): ?>
                     <span class="px-2 py-2 text-gray-500">...</span>
                 <?php endif; ?>
-                <a href="?page=<?php echo $total_pages; ?><?php echo !empty($status_filter) ? '&status=' . $status_filter : ''; ?><?php echo !empty($subject_filter) ? '&subject=' . $subject_filter : ''; ?><?php echo !empty($group_filter) ? '&group=' . $group_filter : ''; ?>" class="px-4 py-2 bg-gray-800 text-gray-300 rounded-lg hover:bg-gray-700 transition-all font-medium"><?php echo $total_pages; ?></a>
+                <a href="?page=<?php echo $total_pages; ?><?php echo !empty($status_filter) ? '&status=' . $status_filter : ''; ?><?php echo !empty($subject_filter) ? '&subject=' . $subject_filter : ''; ?><?php echo !empty($group_filter) ? '&group=' . $group_filter : ''; ?>" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-all font-medium"><?php echo $total_pages; ?></a>
             <?php endif; ?>
         </div>
 
         <?php if ($page < $total_pages): ?>
             <a href="?page=<?php echo $page + 1; ?><?php echo !empty($status_filter) ? '&status=' . $status_filter : ''; ?><?php echo !empty($subject_filter) ? '&subject=' . $subject_filter : ''; ?><?php echo !empty($group_filter) ? '&group=' . $group_filter : ''; ?>"
-               class="px-4 py-2 exam-gradient text-white rounded-lg hover:shadow-pink-500/50 transition-all font-medium">
+               class="px-4 py-2 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-lg hover:shadow-purple-500/50 transition-all font-medium">
                 Növbəti →
             </a>
         <?php endif; ?>
@@ -678,13 +874,13 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
                  x-transition:leave="transition ease-in duration-200"
                  x-transition:leave-start="opacity-100 transform scale-100"
                  x-transition:leave-end="opacity-0 transform scale-95"
-                 class="relative bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl shadow-2xl max-w-md w-full p-8 border border-pink-500/30">
+                 class="relative bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 border border-purple-300">
 
                 <div class="flex items-center justify-between mb-6">
-                    <h3 class="text-2xl font-bold bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent">
+                    <h3 class="text-2xl font-bold bg-gradient-to-r from-purple-700 to-purple-800 bg-clip-text text-transparent">
                         Yeni İmtahan Əlavə Et
                     </h3>
-                    <button @click="showModal = false" class="text-gray-400 hover:text-white transition-colors">
+                    <button @click="showModal = false" class="text-gray-600 hover:text-gray-800 transition-colors">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                         </svg>
@@ -693,9 +889,9 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
 
                 <form method="post" action="" class="space-y-5">
                     <div>
-                        <label for="subject_id" class="block text-sm font-semibold text-gray-300 mb-2">Fənn</label>
+                        <label for="subject_id" class="block text-sm font-semibold text-gray-700 mb-2">Fənn</label>
                         <select id="subject_id" name="subject_id" required <?php echo is_teacher() ? 'disabled' : ''; ?>
-                                class="w-full bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all">
+                                class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all">
                             <option value="">Seçin</option>
                             <?php foreach ($subjects as $subject_item): ?>
                                 <option value="<?php echo $subject_item['id_subject']; ?>" <?php echo (is_teacher() && $subject_item['id_subject'] == $_SESSION['subject_id']) ? 'selected' : ''; ?>>
@@ -709,9 +905,9 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
                     </div>
 
                     <div>
-                        <label for="group_id" class="block text-sm font-semibold text-gray-300 mb-2">Qrup</label>
+                        <label for="group_id" class="block text-sm font-semibold text-gray-700 mb-2">Qrup</label>
                         <select id="group_id" name="group_id" required
-                                class="w-full bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all">
+                                class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all">
                             <option value="">Seçin</option>
                             <?php foreach ($groups as $group_item): ?>
                                 <option value="<?php echo $group_item['id_student_group']; ?>">
@@ -723,25 +919,25 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
 
                     <div class="grid grid-cols-2 gap-4">
                         <div>
-                            <label for="exam_date" class="block text-sm font-semibold text-gray-300 mb-2">Tarix</label>
+                            <label for="exam_date" class="block text-sm font-semibold text-gray-700 mb-2">Tarix</label>
                             <input type="date" id="exam_date" name="exam_date" required
-                                   class="w-full bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all">
+                                   class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all">
                         </div>
 
                         <div>
-                            <label for="exam_time" class="block text-sm font-semibold text-gray-300 mb-2">Saat</label>
+                            <label for="exam_time" class="block text-sm font-semibold text-gray-700 mb-2">Saat</label>
                             <input type="time" id="exam_time" name="exam_time" required
-                                   class="w-full bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all">
+                                   class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all">
                         </div>
                     </div>
 
                     <div class="flex space-x-3 pt-4">
                         <button type="button" @click="showModal = false"
-                                class="flex-1 bg-gray-700 text-white px-6 py-3 rounded-xl font-semibold hover:bg-gray-600 transition-all">
+                                class="flex-1 bg-gray-200 text-gray-700 px-6 py-3 rounded-xl font-semibold hover:bg-gray-300 transition-all">
                             Ləğv et
                         </button>
                         <button type="submit" name="add_exam"
-                                class="flex-1 exam-gradient text-white px-6 py-3 rounded-xl font-semibold shadow-lg hover:shadow-pink-500/50 transition-all hover:scale-105">
+                                class="flex-1 bg-gradient-to-r from-purple-600 to-purple-700 text-white px-6 py-3 rounded-xl font-semibold shadow-lg hover:shadow-purple-500/50 transition-all hover:scale-105">
                             Əlavə et
                         </button>
                     </div>

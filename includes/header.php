@@ -126,16 +126,16 @@ if (!isset($pageTitle)) {
         }
 
         ::-webkit-scrollbar-track {
-            background: #f1f5f9;
+            background: #ffffff;
         }
 
         ::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
+            background: #9333ea;
             border-radius: 10px;
         }
 
         ::-webkit-scrollbar-thumb:hover {
-            background: #94a3b8;
+            background: #7c3aed;
         }
 
         /* Hover glow effect */
@@ -221,7 +221,7 @@ if (!isset($pageTitle)) {
             position: absolute;
             width: 4px;
             height: 4px;
-            background: rgba(14, 165, 233, 0.3);
+            background: rgba(147, 51, 234, 0.3);
             border-radius: 50%;
             animation: float-particle 20s infinite;
         }
@@ -234,7 +234,7 @@ if (!isset($pageTitle)) {
         }
     </style>
 </head>
-<body class="h-full bg-gradient-to-br from-slate-50 via-blue-50 to-cyan-50" x-data="{
+<body class="h-full bg-white text-purple-900" x-data="{
     sidebarOpen: true,
     mobileMenuOpen: false,
     darkMode: false
@@ -282,8 +282,8 @@ if (!isset($pageTitle)) {
                 <nav class="flex-1 overflow-y-auto py-6 px-4 space-y-2">
                     <?php if(isset($_SESSION['user_id'])): ?>
 
-                        <?php if(is_admin() || is_prorektor() || is_kafedra() || is_teacher()): ?>
-                        <a href="../admin/dashboard.php" class="sidebar-item flex items-center px-4 py-3 text-gray-700 rounded-xl hover:text-primary-600 group">
+                        <?php if(is_admin() || is_prorektor() || is_dekan() || is_kafedra() || is_teacher()): ?>
+                        <a href="../admin/dashboard.php" class="sidebar-item flex items-center px-4 py-3 text-gray-700 hover:text-purple-700 rounded-xl group">
                             <div class="p-2 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg mr-3 group-hover:scale-110 transition-transform shadow-lg">
                                 <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
@@ -294,7 +294,7 @@ if (!isset($pageTitle)) {
                         <?php endif; ?>
 
                         <?php if(is_admin()): ?>
-                        <a href="../admin/groups.php" class="sidebar-item flex items-center px-4 py-3 text-gray-700 rounded-xl hover:text-primary-600 group">
+                        <a href="../admin/groups.php" class="sidebar-item flex items-center px-4 py-3 text-gray-700 hover:text-purple-700 rounded-xl group">
                             <div class="p-2 bg-gradient-to-br from-green-500 to-emerald-500 rounded-lg mr-3 group-hover:scale-110 transition-transform shadow-lg">
                                 <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
@@ -303,7 +303,7 @@ if (!isset($pageTitle)) {
                             <span class="font-medium">Qruplar</span>
                         </a>
 
-                        <a href="../admin/users.php" class="sidebar-item flex items-center px-4 py-3 text-gray-700 rounded-xl hover:text-primary-600 group">
+                        <a href="../admin/users.php" class="sidebar-item flex items-center px-4 py-3 text-gray-700 hover:text-purple-700 rounded-xl group">
                             <div class="p-2 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg mr-3 group-hover:scale-110 transition-transform shadow-lg">
                                 <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path>
@@ -313,8 +313,8 @@ if (!isset($pageTitle)) {
                         </a>
                         <?php endif; ?>
 
-                        <?php if(is_admin() || is_kafedra()): ?>
-                        <a href="../admin/subjects.php" class="sidebar-item flex items-center px-4 py-3 text-gray-700 rounded-xl hover:text-primary-600 group">
+                        <?php if(is_admin() || is_kafedra() || is_teacher()): ?>
+                        <a href="../admin/subjects.php" class="sidebar-item flex items-center px-4 py-3 text-gray-700 hover:text-purple-700 rounded-xl group">
                             <div class="p-2 bg-gradient-to-br from-orange-500 to-red-500 rounded-lg mr-3 group-hover:scale-110 transition-transform shadow-lg">
                                 <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
@@ -324,17 +324,8 @@ if (!isset($pageTitle)) {
                         </a>
                         <?php endif; ?>
 
-                        <?php if(is_teacher() && isset($_SESSION['subject_id'])): ?>
-                        <a href="../admin/questions.php?subject=<?php echo $_SESSION['subject_id']; ?>" class="sidebar-item flex items-center px-4 py-3 text-gray-700 rounded-xl hover:text-primary-600 group">
-                            <div class="p-2 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-lg mr-3 group-hover:scale-110 transition-transform shadow-lg">
-                                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                </svg>
-                            </div>
-                            <span class="font-medium">Suallarım</span>
-                        </a>
-                        <?php elseif(is_admin() || is_kafedra()): ?>
-                        <a href="../admin/questions.php" class="sidebar-item flex items-center px-4 py-3 text-gray-700 rounded-xl hover:text-primary-600 group">
+                        <?php if(is_admin() || is_kafedra()): ?>
+                        <a href="../admin/questions.php" class="sidebar-item flex items-center px-4 py-3 text-gray-700 hover:text-purple-700 rounded-xl group">
                             <div class="p-2 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-lg mr-3 group-hover:scale-110 transition-transform shadow-lg">
                                 <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
@@ -345,7 +336,7 @@ if (!isset($pageTitle)) {
                         <?php endif; ?>
 
                         <?php if(is_admin() || is_prorektor()): ?>
-                        <a href="../admin/exams.php" class="sidebar-item flex items-center px-4 py-3 text-gray-700 rounded-xl hover:text-primary-600 group">
+                        <a href="../admin/exams.php" class="sidebar-item flex items-center px-4 py-3 text-gray-700 hover:text-purple-700 rounded-xl group">
                             <div class="p-2 bg-gradient-to-br from-amber-500 to-orange-500 rounded-lg mr-3 group-hover:scale-110 transition-transform shadow-lg">
                                 <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path>
@@ -355,8 +346,8 @@ if (!isset($pageTitle)) {
                         </a>
                         <?php endif; ?>
 
-                        <?php if(is_admin() || is_prorektor() || is_kafedra()): ?>
-                        <a href="../admin/exam_results.php" class="sidebar-item flex items-center px-4 py-3 text-gray-700 rounded-xl hover:text-primary-600 group">
+                        <?php if(is_admin() || is_prorektor() || is_dekan() || is_kafedra()): ?>
+                        <a href="../admin/exam_results.php" class="sidebar-item flex items-center px-4 py-3 text-gray-700 hover:text-purple-700 rounded-xl group">
                             <div class="p-2 bg-gradient-to-br from-teal-500 to-cyan-500 rounded-lg mr-3 group-hover:scale-110 transition-transform shadow-lg">
                                 <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 00-2-2m0 0h2a2 2 0 012 2v6a2 2 0 01-2 2h-2a2 2 0 01-2-2v-6z"></path>
@@ -367,7 +358,7 @@ if (!isset($pageTitle)) {
                         <?php endif; ?>
 
                         <?php if(is_admin() || is_prorektor()): ?>
-                        <a href="../admin/archived_results.php" class="sidebar-item flex items-center px-4 py-3 text-gray-700 rounded-xl hover:text-primary-600 group">
+                        <a href="../admin/archived_results.php" class="sidebar-item flex items-center px-4 py-3 text-gray-700 hover:text-purple-700 rounded-xl group">
                             <div class="p-2 bg-gradient-to-br from-slate-500 to-gray-600 rounded-lg mr-3 group-hover:scale-110 transition-transform shadow-lg">
                                 <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path>
@@ -378,7 +369,7 @@ if (!isset($pageTitle)) {
                         <?php endif; ?>
 
                         <?php if(is_admin()): ?>
-                        <a href="../admin/archived_questions.php" class="sidebar-item flex items-center px-4 py-3 text-gray-700 rounded-xl hover:text-primary-600 group">
+                        <a href="../admin/archived_questions.php" class="sidebar-item flex items-center px-4 py-3 text-gray-700 hover:text-purple-700 rounded-xl group">
                             <div class="p-2 bg-gradient-to-br from-amber-500 to-orange-600 rounded-lg mr-3 group-hover:scale-110 transition-transform shadow-lg">
                                 <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
@@ -387,7 +378,7 @@ if (!isset($pageTitle)) {
                             <span class="font-medium">Arxivlənmiş Suallar</span>
                         </a>
 
-                        <a href="../admin/archived_subjects.php" class="sidebar-item flex items-center px-4 py-3 text-gray-700 rounded-xl hover:text-primary-600 group">
+                        <a href="../admin/archived_subjects.php" class="sidebar-item flex items-center px-4 py-3 text-gray-700 hover:text-purple-700 rounded-xl group">
                             <div class="p-2 bg-gradient-to-br from-rose-500 to-pink-600 rounded-lg mr-3 group-hover:scale-110 transition-transform shadow-lg">
                                 <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>

@@ -13,6 +13,10 @@ function is_kafedra() {
     return isset($_SESSION['role']) && $_SESSION['role'] === 'kafedra';
 }
 
+function is_dekan() {
+    return isset($_SESSION['role']) && $_SESSION['role'] === 'dekan';
+}
+
 function is_teacher() {
     return isset($_SESSION['role']) && $_SESSION['role'] === 'muellim';
 }
@@ -35,7 +39,7 @@ function can_create_exams() {
 }
 
 function can_view_exam_results() {
-    return is_admin() || is_prorektor() || is_kafedra();
+    return is_admin() || is_prorektor() || is_dekan() || is_kafedra();
 }
 
 function can_manage_users() {
@@ -52,6 +56,22 @@ function can_delete_archives() {
 
 function can_download_results_docx() {
     return is_prorektor();
+}
+
+function can_edit_scores() {
+    return is_admin();
+}
+
+function can_edit_writing_score() {
+    return is_admin() || is_dekan();
+}
+
+function can_edit_speaking_score() {
+    return is_admin() || is_kafedra();
+}
+
+function can_export_results() {
+    return is_admin() || is_prorektor() || is_dekan() || is_kafedra();
 }
 
 ?>

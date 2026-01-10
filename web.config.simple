@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <system.webServer>
+
+        <!-- Default Document -->
+        <defaultDocument>
+            <files>
+                <clear />
+                <add value="index.php" />
+                <add value="index.html" />
+            </files>
+        </defaultDocument>
+
+        <!-- HTTP Response Headers -->
+        <httpProtocol>
+            <customHeaders>
+                <add name="X-Content-Type-Options" value="nosniff" />
+                <add name="X-Frame-Options" value="SAMEORIGIN" />
+            </customHeaders>
+        </httpProtocol>
+
+        <!-- Static Content MIME Types -->
+        <staticContent>
+            <mimeMap fileExtension=".mp3" mimeType="audio/mpeg" />
+            <mimeMap fileExtension=".wav" mimeType="audio/wav" />
+            <mimeMap fileExtension=".ogg" mimeType="audio/ogg" />
+            <mimeMap fileExtension=".json" mimeType="application/json" />
+        </staticContent>
+
+        <!-- Security -->
+        <security>
+            <requestFiltering>
+                <!-- 30MB max file size -->
+                <requestLimits maxAllowedContentLength="31457280" />
+            </requestFiltering>
+        </security>
+
+        <!-- Directory Browsing -->
+        <directoryBrowse enabled="false" />
+
+    </system.webServer>
+
+    <!-- PHP Settings via system.web -->
+    <system.web>
+        <httpRuntime maxRequestLength="30720" executionTimeout="300" />
+    </system.web>
+
+</configuration>

@@ -1,4 +1,5 @@
 <?php
+ob_start(); // Start output buffering to allow headers
 error_reporting(E_ALL);
 ini_set('display_errors', '1');
 require_once "../includes/db.php";
@@ -43,6 +44,218 @@ if ($stmt->rowCount() == 0) {
 }
 
 $exam = $stmt->fetch(PDO::FETCH_ASSOC);
+
+// Check if student has already completed this exam
+$check_query = "SELECT id_score FROM scores WHERE exam_id = :exam_id AND user_id = :user_id";
+$check_stmt = $db->prepare($check_query);
+$check_stmt->bindParam(":exam_id", $exam_id);
+$check_stmt->bindParam(":user_id", $user_id);
+$check_stmt->execute();
+
+if ($check_stmt->rowCount() > 0) {
+    // Student has already completed this exam
+    header("Location: dashboard.php?error=already_completed");
+    exit();
+}
+
+// Əgər imtahan "pending" statusundadırsa, avtomatik olaraq "in_progress"-ə keçir
+if ($exam['status'] == 'pending') {
+    $update_query = "UPDATE exams SET status = 'in_progress' WHERE id_exam = :exam_id";
+    $update_stmt = $db->prepare($update_query);
+    $update_stmt->bindParam(":exam_id", $exam_id);
+    $update_stmt->execute();
+    $exam['status'] = 'in_progress'; // Local variable-ı da yenilə
+}
+
+// ====== FORM SUBMISSION HANDLING - MOVED TO TOP ======
+// This MUST be before any HTML output to allow redirect
+if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['submit_exam'])) {
+    error_log("=== EXAM SUBMISSION STARTED ===");
+    error_log("POST data: " . print_r($_POST, true));
+    try {
+        $db->beginTransaction();
+
+        // Get all questions for this exam
+        $query = "SELECT qr.id_question_text, qt.question_var
+                  FROM question_read qr
+                  JOIN question_files qf ON qr.id_read_quest_file = qf.id_read_quest_file
+                  JOIN question_types qt ON qr.id_question_type = qt.id_quest_type
+                  WHERE qf.subject_id = :subject_id";
+        $stmt = $db->prepare($query);
+        $stmt->bindParam(":subject_id", $exam['id_subject']);
+        $stmt->execute();
+        $all_questions = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Initialize total score counter
+        $total_score = 0;
+
+        foreach ($all_questions as $question) {
+            $question_id = $question['id_question_text'];
+            $question_type = $question['question_var'];
+            $user_answer = '';
+            $correct_answer = '';
+
+            // Get correct answer based on question type
+            if ($question_type == 'multiple') {
+                $query = "SELECT correct_v, question_score FROM multiple_questions mq
+                          JOIN question_read qr ON mq.id_question_text = qr.id_question_text
+                          WHERE mq.id_question_text = :id_question_text";
+                $stmt = $db->prepare($query);
+                $stmt->bindParam(":id_question_text", $question_id);
+                $stmt->execute();
+                $result = $stmt->fetch(PDO::FETCH_ASSOC);
+                $correct_answer = $result ? $result['correct_v'] : '';
+                $question_score = $result ? $result['question_score'] : 0;
+                $user_answer = isset($_POST['answer'][$question_id]) ? $_POST['answer'][$question_id] : '';
+
+            } elseif ($question_type == 'open') {
+                $query = "SELECT corr_v, question_score FROM open_questions oq
+                          JOIN question_read qr ON oq.id_question_text = qr.id_question_text
+                          WHERE oq.id_question_text = :id_question_text";
+                $stmt = $db->prepare($query);
+                $stmt->bindParam(":id_question_text", $question_id);
+                $stmt->execute();
+                $result = $stmt->fetch(PDO::FETCH_ASSOC);
+                $correct_answer = $result ? $result['corr_v'] : '';
+                $question_score = $result ? $result['question_score'] : 0;
+                $user_answer = isset($_POST['answer'][$question_id]) ? trim($_POST['answer'][$question_id]) : '';
+
+            } elseif ($question_type == 'matching') {
+                $query = "SELECT corr_variant, question_score FROM matching_questions mq
+                          JOIN question_read qr ON mq.id_question_text = qr.id_question_text
+                          WHERE mq.id_question_text = :id_question_text";
+                $stmt = $db->prepare($query);
+                $stmt->bindParam(":id_question_text", $question_id);
+                $stmt->execute();
+                $result = $stmt->fetch(PDO::FETCH_ASSOC);
+                $correct_answer = $result ? $result['corr_variant'] : '';
+                $question_score = $result ? $result['question_score'] : 0;
+                $user_answer = isset($_POST['answer'][$question_id]) ? $_POST['answer'][$question_id] : '';
+            } else {
+                continue;
+            }
+
+            // Check correctness
+            $is_correct = null;
+            $score_earned = 0;
+
+            if (!empty($user_answer) && !empty($correct_answer)) {
+                if ($question_type == 'multiple' || $question_type == 'matching') {
+                    $is_correct = (strtolower(trim($user_answer)) == strtolower(trim($correct_answer))) ? 1 : 0;
+                } elseif ($question_type == 'open') {
+                    $user_lower = strtolower(trim($user_answer));
+                    $correct_lower = strtolower(trim($correct_answer));
+
+                    if ($user_lower == $correct_lower) {
+                        $is_correct = 1;
+                    } elseif (strpos($user_lower, $correct_lower) !== false || strpos($correct_lower, $user_lower) !== false) {
+                        $is_correct = 1;
+                    } else {
+                        $is_correct = 0;
+                    }
+                }
+
+                if ($is_correct == 1) {
+                    $score_earned = $question_score;
+                }
+            }
+
+            // Add to total score
+            $total_score += $score_earned;
+
+            // Save answer to database
+            $query = "SELECT id_answer FROM answers
+                      WHERE exam_id = :exam_id AND id_questions = :question_id AND user_id = :user_id";
+            $stmt = $db->prepare($query);
+            $stmt->bindParam(":exam_id", $exam_id);
+            $stmt->bindParam(":question_id", $question_id);
+            $stmt->bindParam(":user_id", $user_id);
+            $stmt->execute();
+
+            $now = date('Y-m-d H:i:s');
+
+            if ($stmt->rowCount() > 0) {
+                $answer_id = $stmt->fetch(PDO::FETCH_ASSOC)['id_answer'];
+                $query = "UPDATE answers
+                          SET user_answer = :user_answer, correct_var = :correct_answer,
+                              is_correct = :is_correct, score_earned = :score_earned, datetime = :datetime
+                          WHERE id_answer = :id_answer";
+                $stmt = $db->prepare($query);
+                $stmt->bindParam(":user_answer", $user_answer);
+                $stmt->bindParam(":correct_answer", $correct_answer);
+                $stmt->bindParam(":is_correct", $is_correct);
+                $stmt->bindParam(":score_earned", $score_earned);
+                $stmt->bindParam(":datetime", $now);
+                $stmt->bindParam(":id_answer", $answer_id);
+                $stmt->execute();
+            } else {
+                $query = "INSERT INTO answers (exam_id, id_questions, user_id, user_answer, correct_var,
+                                             is_correct, score_earned, datetime)
+                          VALUES (:exam_id, :question_id, :user_id, :user_answer, :correct_answer,
+                                  :is_correct, :score_earned, :datetime)";
+                $stmt = $db->prepare($query);
+                $stmt->bindParam(":exam_id", $exam_id);
+                $stmt->bindParam(":question_id", $question_id);
+                $stmt->bindParam(":user_id", $user_id);
+                $stmt->bindParam(":user_answer", $user_answer);
+                $stmt->bindParam(":correct_answer", $correct_answer);
+                $stmt->bindParam(":is_correct", $is_correct);
+                $stmt->bindParam(":score_earned", $score_earned);
+                $stmt->bindParam(":datetime", $now);
+                $stmt->execute();
+            }
+        }
+
+        // NOTE: Do NOT change exam status to 'completed' here
+        // Only admin can mark exam as completed
+        // This allows other students to continue taking the exam
+
+        // Save overall score to scores table
+        $now = date('Y-m-d H:i:s');
+        $score_query = "INSERT INTO scores (exam_id, user_id, id_answer, score, datetime)
+                        VALUES (:exam_id, :user_id, NULL, :total_score, :datetime)";
+        $score_stmt = $db->prepare($score_query);
+        $score_stmt->bindParam(":exam_id", $exam_id);
+        $score_stmt->bindParam(":user_id", $user_id);
+        $score_stmt->bindParam(":total_score", $total_score);
+        $score_stmt->bindParam(":datetime", $now);
+        $score_stmt->execute();
+
+        error_log("=== TOTAL SCORE: $total_score ===");
+
+        $db->commit();
+        error_log("=== DATABASE COMMITTED ===");
+
+        // Clean output buffer and redirect
+        while (ob_get_level()) {
+            ob_end_clean();
+        }
+
+        error_log("=== REDIRECTING TO DASHBOARD ===");
+        header("Location: dashboard.php?success=1");
+        exit();
+
+    } catch (PDOException $e) {
+        error_log("=== PDO EXCEPTION: " . $e->getMessage() . " ===");
+        $db->rollBack();
+        die('<div style="background:#fee; padding:20px; margin:20px; border:2px solid #f00; border-radius:8px;">
+            <h3 style="color:#c00;">İmtahan təsdiq xətası</h3>
+            <p>' . htmlspecialchars($e->getMessage()) . '</p>
+            <p><a href="dashboard.php" style="color:#00f;">Dashboard-a qayıt</a></p>
+            </div>');
+    } catch (Exception $e) {
+        error_log("=== GENERAL EXCEPTION: " . $e->getMessage() . " ===");
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        die('<div style="background:#fee; padding:20px; margin:20px; border:2px solid #f00; border-radius:8px;">
+            <h3 style="color:#c00;">Xəta baş verdi</h3>
+            <p>' . htmlspecialchars($e->getMessage()) . '</p>
+            <p><a href="dashboard.php" style="color:#00f;">Dashboard-a qayıt</a></p>
+            </div>');
+    }
+}
+// ====== END FORM SUBMISSION HANDLING ======
 
 // FILE HANDLING FUNCTIONS
 function getValidReadingPath($file_path) {
@@ -402,141 +615,6 @@ foreach ($grouped_questions as $group_data) {
 }
 
 $pageTitle = "İmtahan: " . $exam['subjectname'];
-
-// FORM SUBMISSION HANDLING
-if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['submit_exam'])) {
-    try {
-        $db->beginTransaction();
-        
-        $all_questions = [];
-        foreach ($grouped_questions as $group_data) {
-            $all_questions = array_merge($all_questions, $group_data['questions']);
-        }
-        
-        foreach ($all_questions as $question) {
-            $question_id = $question['id_question_text'];
-            $question_type = $question['question_var'];
-            $user_answer = '';
-            $correct_answer = '';
-            
-            // Get correct answer based on question type
-            if ($question_type == 'multiple') {
-                $query = "SELECT correct_v FROM multiple_questions WHERE id_question_text = :id_question_text";
-                $stmt = $db->prepare($query);
-                $stmt->bindParam(":id_question_text", $question_id);
-                $stmt->execute();
-                $result = $stmt->fetch(PDO::FETCH_ASSOC);
-                $correct_answer = $result ? $result['correct_v'] : '';
-                $user_answer = isset($_POST['answer'][$question_id]) ? $_POST['answer'][$question_id] : '';
-                
-            } elseif ($question_type == 'open') {
-                $query = "SELECT corr_v FROM open_questions WHERE id_question_text = :id_question_text";
-                $stmt = $db->prepare($query);
-                $stmt->bindParam(":id_question_text", $question_id);
-                $stmt->execute();
-                $result = $stmt->fetch(PDO::FETCH_ASSOC);
-                $correct_answer = $result ? $result['corr_v'] : '';
-                $user_answer = isset($_POST['answer'][$question_id]) ? trim($_POST['answer'][$question_id]) : '';
-                
-            } elseif ($question_type == 'matching') {
-                $query = "SELECT corr_variant FROM matching_questions WHERE id_question_text = :id_question_text";
-                $stmt = $db->prepare($query);
-                $stmt->bindParam(":id_question_text", $question_id);
-                $stmt->execute();
-                $result = $stmt->fetch(PDO::FETCH_ASSOC);
-                $correct_answer = $result ? $result['corr_variant'] : '';
-                $user_answer = isset($_POST['answer'][$question_id]) ? $_POST['answer'][$question_id] : '';
-            }
-            
-            // Check correctness
-            $is_correct = null;
-            $score_earned = 0;
-            
-            if (!empty($user_answer) && !empty($correct_answer)) {
-                if ($question_type == 'multiple' || $question_type == 'matching') {
-                    $is_correct = (strtolower(trim($user_answer)) == strtolower(trim($correct_answer))) ? 1 : 0;
-                } elseif ($question_type == 'open') {
-                    $user_lower = strtolower(trim($user_answer));
-                    $correct_lower = strtolower(trim($correct_answer));
-                    
-                    if ($user_lower == $correct_lower) {
-                        $is_correct = 1;
-                    } elseif (strpos($user_lower, $correct_lower) !== false || strpos($correct_lower, $user_lower) !== false) {
-                        $is_correct = 1;
-                    } else {
-                        $is_correct = 0;
-                    }
-                }
-                
-                if ($is_correct == 1) {
-                    $score_earned = $question['question_score'];
-                }
-            }
-            
-            // Save answer to database
-            $query = "SELECT id_answer FROM answers 
-                      WHERE exam_id = :exam_id AND id_questions = :question_id AND user_id = :user_id";
-            $stmt = $db->prepare($query);
-            $stmt->bindParam(":exam_id", $exam_id);
-            $stmt->bindParam(":question_id", $question_id);
-            $stmt->bindParam(":user_id", $user_id);
-            $stmt->execute();
-            
-            $now = date('Y-m-d H:i:s');
-            
-            if ($stmt->rowCount() > 0) {
-                // Update existing answer
-                $answer_id = $stmt->fetch(PDO::FETCH_ASSOC)['id_answer'];
-                
-                $query = "UPDATE answers 
-                          SET user_answer = :user_answer, correct_var = :correct_answer, 
-                              is_correct = :is_correct, score_earned = :score_earned, datetime = :datetime
-                          WHERE id_answer = :id_answer";
-                $stmt = $db->prepare($query);
-                $stmt->bindParam(":user_answer", $user_answer);
-                $stmt->bindParam(":correct_answer", $correct_answer);
-                $stmt->bindParam(":is_correct", $is_correct);
-                $stmt->bindParam(":score_earned", $score_earned);
-                $stmt->bindParam(":datetime", $now);
-                $stmt->bindParam(":id_answer", $answer_id);
-                $stmt->execute();
-                
-            } else {
-                // Insert new answer
-                $query = "INSERT INTO answers (exam_id, id_questions, user_id, user_answer, correct_var, 
-                                             is_correct, score_earned, datetime)
-                          VALUES (:exam_id, :question_id, :user_id, :user_answer, :correct_answer, 
-                                  :is_correct, :score_earned, :datetime)";
-                $stmt = $db->prepare($query);
-                $stmt->bindParam(":exam_id", $exam_id);
-                $stmt->bindParam(":question_id", $question_id);
-                $stmt->bindParam(":user_id", $user_id);
-                $stmt->bindParam(":user_answer", $user_answer);
-                $stmt->bindParam(":correct_answer", $correct_answer);
-                $stmt->bindParam(":is_correct", $is_correct);
-                $stmt->bindParam(":score_earned", $score_earned);
-                $stmt->bindParam(":datetime", $now);
-                $stmt->execute();
-            }
-        }
-        
-        // Update exam status to completed
-        $complete_query = "UPDATE exams SET status = 'completed' WHERE id_exam = :exam_id";
-        $complete_stmt = $db->prepare($complete_query);
-        $complete_stmt->bindParam(":exam_id", $exam_id);
-        $complete_stmt->execute();
-        
-        $db->commit();
-        
-        // Redirect to results page
-        header("Location: exams.php?tab=results&success=1");
-        exit();
-        
-    } catch (PDOException $e) {
-        $db->rollBack();
-        echo '<div class="alert alert-danger">Xəta: ' . $e->getMessage() . '</div>';
-    }
-}
 ?>
 
 <!DOCTYPE html>
@@ -545,358 +623,212 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['submit_exam'])) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo $pageTitle; ?></title>
-    
+
     <!-- CACHE PREVENTION -->
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    
-    <!-- Bootstrap CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <title><?php echo $pageTitle; ?></title>
-    
-    <!-- Bootstrap CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Font Awesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    animation: {
+                        'fade-in': 'fadeIn 0.5s ease-in-out',
+                        'slide-up': 'slideUp 0.4s ease-out',
+                        'slide-in-right': 'slideInRight 0.4s ease-out',
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        },
+                        slideUp: {
+                            '0%': { transform: 'translateY(20px)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' },
+                        },
+                        slideInRight: {
+                            '0%': { transform: 'translateX(20px)', opacity: '0' },
+                            '100%': { transform: 'translateX(0)', opacity: '1' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
     <style>
-    body {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-        min-height: 100vh;
-        color: #1e293b;
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');
+
+    * {
+        font-family: 'Poppins', -apple-system, BlinkMacSystemFont, sans-serif;
     }
-    
-    .exam-container {
-        max-width: 1600px;
-        margin: 0 auto;
-        padding: 20px;
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #f1f5f9; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+    /* Glassmorphism */
+    .glass {
+        background: rgba(255, 255, 255, 0.8);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
     }
-    
-    .exam-header {
-        background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-        color: white;
-        padding: 2rem;
-        border-radius: 12px;
-        margin-bottom: 2rem;
-        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+
+    /* Gradient Text */
+    .gradient-text {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
     }
-    
-    .variant-info {
-        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-        color: white;
-        padding: 1rem 2rem;
-        border-radius: 8px;
-        margin-bottom: 2rem;
-        text-align: center;
-    }
-    
-    .exam-section {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 2rem;
-        margin-bottom: 3rem;
-    }
-    
-    .exam-section.no-reading {
-        grid-template-columns: 1fr;
-    }
-    
-    .questions-panel {
-        background: white;
-        border-radius: 12px;
-        padding: 2rem;
-        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-        border: 1px solid #e2e8f0;
-    }
-    
-    .reading-panel {
-        background: white;
-        border-radius: 12px;
-        padding: 0;
-        width: 700px;
-        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-        border: 1px solid #e2e8f0;
-        max-height: 1200px;
-        overflow: hidden;
-    }
-    
-    .reading-header {
-        background: linear-gradient(135deg, #06b6d4 0%, #0284c7 100%);
-        color: white;
-        padding: 1rem 2rem;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-    
-    .reading-content {
-        padding: 2rem;
-        max-height: 1100px;
-        overflow-y: auto;
-        font-family: Georgia, 'Times New Roman', serif;
-        font-size: 1.1rem;
-        line-height: 1.8;
-        background: #f8fafc;
-    }
-    
-    .reading-controls {
-        display: flex;
-        gap: 0.5rem;
-    }
-    
-    .font-btn {
-        width: 32px;
-        height: 32px;
-        border: none;
-        background: rgba(255, 255, 255, 0.2);
-        color: white;
-        border-radius: 6px;
-        cursor: pointer;
-        transition: all 0.3s ease;
-    }
-    
-    .font-btn:hover {
-        background: rgba(255, 255, 255, 0.3);
-        transform: scale(1.1);
-    }
-    
-    .question-item {
-        background: #f8fafc;
-        border: 2px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 1.5rem;
-        margin-bottom: 1.5rem;
-        transition: all 0.3s ease;
-    }
-    
-    .question-item:hover {
-        border-color: #2563eb;
-        transform: translateX(4px);
-        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
-    }
-    
-    /* Material Design Option Cards */
-    .option-card {
-        background: white;
-        border: 2px solid #e5e7eb;
-        border-radius: 12px;
-        padding: 1.25rem;
-        margin-bottom: 0.75rem;
-        cursor: pointer;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+    /* Radio Button Animation */
+    .radio-option {
         position: relative;
         overflow: hidden;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
     }
 
-    .option-card::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(99, 102, 241, 0.05) 100%);
-        opacity: 0;
-        transition: opacity 0.3s ease;
-    }
-
-    .option-card:hover {
-        border-color: #3b82f6;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
-    }
-
-    .option-card:hover::before {
-        opacity: 1;
-    }
-
-    .option-card.selected {
-        background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-        border-color: #3b82f6;
-        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
-    }
-
-    .option-card.selected::after {
-        content: '✓';
-        position: absolute;
-        top: 1rem;
-        right: 1rem;
-        width: 24px;
-        height: 24px;
-        background: #3b82f6;
-        color: white;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: bold;
-        font-size: 14px;
-    }
-
-    .option-radio {
-        position: absolute;
-        opacity: 0;
-        pointer-events: none;
-    }
-
-    .option-label {
-        display: flex;
-        align-items: flex-start;
-        gap: 1rem;
-        position: relative;
-        z-index: 1;
-        padding-right: 2.5rem;
-    }
-
-    .option-indicator {
-        width: 20px;
-        height: 20px;
-        border: 2px solid #94a3b8;
-        border-radius: 50%;
-        flex-shrink: 0;
-        margin-top: 0.25rem;
-        transition: all 0.3s ease;
-        position: relative;
-        background: white;
-    }
-
-    .option-card:hover .option-indicator {
-        border-color: #3b82f6;
-    }
-
-    .option-card.selected .option-indicator {
-        border-color: #3b82f6;
-        background: #3b82f6;
-    }
-
-    .option-card.selected .option-indicator::after {
+    .radio-option::before {
         content: '';
         position: absolute;
         top: 50%;
         left: 50%;
+        width: 0;
+        height: 0;
+        border-radius: 50%;
+        background: rgba(99, 102, 241, 0.1);
         transform: translate(-50%, -50%);
+        transition: width 0.6s, height 0.6s;
+    }
+
+    .radio-option:hover::before {
+        width: 300px;
+        height: 300px;
+    }
+
+    .radio-option input[type="radio"]:checked + .radio-circle {
+        border-color: #6366f1;
+        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+        box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.2);
+    }
+
+    .radio-option input[type="radio"]:checked + .radio-circle::after {
+        transform: translate(-50%, -50%) scale(1);
+        opacity: 1;
+    }
+
+    .radio-circle {
+        position: relative;
+        width: 24px;
+        height: 24px;
+        border: 2px solid #cbd5e1;
+        border-radius: 50%;
+        flex-shrink: 0;
+        transition: all 0.3s ease;
+    }
+
+    .radio-circle::after {
+        content: '';
+        position: absolute;
         width: 8px;
         height: 8px;
         background: white;
         border-radius: 50%;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%) scale(0);
+        opacity: 0;
+        transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
     }
-    
-    .submit-container {
-        background: white;
-        border-radius: 12px;
-        padding: 2rem;
-        text-align: center;
-        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-        margin-top: 2rem;
+
+    /* Question Nav */
+    .question-nav-item {
+        transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
     }
-    
-    .btn-submit {
+
+    .question-nav-item.answered {
         background: linear-gradient(135deg, #10b981 0%, #059669 100%);
         color: white;
-        padding: 1rem 3rem;
-        font-size: 1.25rem;
-        font-weight: 600;
-        border: none;
-        border-radius: 8px;
-        cursor: pointer;
-        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);
     }
-    
-    .btn-submit:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 25px rgba(16, 185, 129, 0.3);
+
+    .question-nav-item.current {
+        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+        color: white;
+        transform: scale(1.1);
+        box-shadow: 0 8px 25px rgba(99, 102, 241, 0.5);
     }
-    
-    .alert {
-        border-radius: 8px;
-        padding: 1rem 1.5rem;
-        margin-bottom: 1.5rem;
-        border: none;
+
+    .question-nav-item:not(.current):not(.answered) {
+        background: white;
     }
-    
-    .alert-info {
-        background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-        color: #1e40af;
-        border-left: 4px solid #2563eb;
+
+    .question-nav-item:not(.current):not(.answered):hover {
+        transform: scale(1.1);
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
     }
-    
-    .alert-warning {
-        background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
-        color: #92400e;
-        border-left: 4px solid #f59e0b;
+
+    /* Progress Bar Shimmer */
+    .progress-bar {
+        position: relative;
+        overflow: hidden;
     }
-    
-    .alert-danger {
-        background: linear-gradient(135deg, #fef2f2 0%, #fecaca 100%);
-        color: #b91c1c;
-        border-left: 4px solid #ef4444;
+
+    .progress-bar::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+        animation: shimmer 2s infinite;
     }
-    
-    .alert-success {
-        background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
-        color: #15803d;
-        border-left: 4px solid #10b981;
+
+    @keyframes shimmer {
+        0% { left: -100%; }
+        100% { left: 100%; }
     }
-    
-    .audio-controls {
-        display: flex;
-        gap: 1rem;
-        justify-content: center;
-        margin: 2rem 0;
-    }
-    
-    .audio-btn {
-        padding: 0.5rem 1rem;
-        border: none;
-        border-radius: 6px;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        font-weight: 500;
-    }
-    
-    .audio-btn:hover {
-        transform: translateY(-2px);
-    }
-    
-    @media (max-width: 992px) {
-        .exam-section {
-            grid-template-columns: 1fr !important;
-            gap: 1.5rem;
-        }
-        
-        .reading-panel {
-            order: -1;
-            max-height: 400px;
-        }
-        
-        .audio-controls {
-            flex-wrap: wrap;
-        }
-        
-        .audio-btn {
-            min-width: 120px;
-        }
+
+    /* Hidden class for questions */
+    .question-hidden {
+        display: none;
     }
     </style>
 </head>
-<body>
-    <div class="exam-container">
-        <!-- Exam Header -->
-        <div class="exam-header">
-            <h1 class="mb-2">
-                <i class="fas fa-graduation-cap me-2"></i>
-                İmtahan: <?php echo htmlspecialchars($exam['subjectname']); ?>
-            </h1>
-            <p class="mb-0 opacity-75">
-                <i class="fas fa-clock me-2"></i>
-                Müddət: <?php echo $exam['timer']; ?> dəqiqə
-            </p>
-        </div>
+<body class="bg-[#f5f7fa] min-h-screen">
+
+    <!-- Top Navigation -->
+    <div class="bg-white border-b border-gray-100 px-6 py-4 shadow-sm">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <h1 class="text-2xl font-bold text-gray-700">IELTS Test System</h1>
+            <div class="flex items-center gap-6">
+                <div class="flex items-center gap-3 text-gray-600">
+                    <i class="fas fa-clock"></i>
+                    <span class="font-semibold" id="timer">Vaxt: <?php echo $exam['timer']; ?>:00</span>
+                </label>
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center text-white">
+                        <i class="fas fa-user"></i>
+                    </label>
+                    <span class="text-gray-700 font-medium"><?php echo htmlspecialchars($_SESSION['username']); ?></span>
+                </label>
+            </label>
+        </label>
+    </label>
+
+    <!-- Main Container -->
+    <div class="max-w-7xl mx-auto px-6 py-8">
 
       
 
@@ -904,42 +836,55 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['submit_exam'])) {
         <div class="alert alert-info">
             <strong>🔍 Debug rejimi aktivdir</strong>
             <a href="?id=<?php echo $exam_id; ?>" class="btn btn-sm btn-outline-primary ms-2">Debug-sız göstər</a>
-        </div>
+        </label>
         <?php endif; ?>
 
+        <!-- Main White Card -->
+        <div class="bg-white rounded-3xl shadow-sm p-8 lg:p-12">
+
+            <!-- Page Header -->
+            <div class="flex items-center justify-between mb-8">
+                <div>
+                    <h2 class="text-3xl font-bold text-gray-800 mb-2"><?php echo htmlspecialchars($exam['subjectname']); ?></h2>
+                    <p class="text-gray-500">Aşağıdakı sualları cavablandırın</p>
+                </label>
+                <div class="text-right">
+                    <div class="text-2xl font-bold text-gray-800" id="timer-display">Vaxt: <?php echo $exam['timer']; ?>:00</label>
+                </label>
+            </label>
+
         <form method="post" action="" id="examForm">
-            <?php 
+            <?php
             $question_counter = 1;
-            
-            foreach ($grouped_questions as $group_key => $group_data): 
+
+            foreach ($grouped_questions as $group_key => $group_data):
                 $file_questions = $group_data['questions'];
                 $file_type = $group_data['file_type'];
                 $has_reading_content = ($file_type == 'reading' && isset($file_contents[$group_key]));
                 $has_listening_content = ($file_type == 'listening' && isset($audio_paths[$group_key]) && !empty($audio_paths[$group_key]));
                 $has_material_panel = $has_reading_content || $has_listening_content;
             ?>
-            
-            <div class="exam-section <?php echo $has_material_panel ? '' : 'no-reading'; ?>">
-                <!-- Questions Panel -->
-                <div class="questions-panel">
-                    <h3 class="text-<?php echo $file_type == 'reading' ? 'info' : ($file_type == 'listening' ? 'success' : ($file_type == 'writing' ? 'warning' : 'danger')); ?> mb-4">
-                        <i class="fas fa-<?php echo $file_type == 'reading' ? 'book-open' : ($file_type == 'listening' ? 'headphones' : ($file_type == 'writing' ? 'pen' : 'microphone')); ?> me-2"></i>
-                        <?php echo ucfirst($file_type); ?> Sualları (<?php echo count($file_questions); ?> ədəd)
-                    </h3>
-                    
+
+            <!-- Section Container -->
+            <div class="mb-12">
+                <h3 class="text-xl font-semibold text-gray-700 mb-6 pb-3 border-b border-gray-200">
+                    <?php echo ucfirst($file_type); ?> Bölümü
+                </h3>
+
                     <?php foreach ($file_questions as $question): ?>
-                        <div class="question-item">
-                            <div class="d-flex justify-content-between align-items-center mb-3">
-                                <h5 class="mb-0">
-                                    <i class="fas fa-question-circle me-2"></i>
-                                    Sual <?php echo $question_counter; ?>
-                                </h5>
-                                <span class="badge bg-<?php echo $file_type == 'reading' ? 'info' : ($file_type == 'listening' ? 'success' : ($file_type == 'writing' ? 'warning' : 'danger')); ?>">
-                                    <?php echo $question['question_score']; ?> bal
-                                </span>
-                            </div>
-                            
-                            <p class="mb-3 fw-medium"><?php echo nl2br(htmlspecialchars($question['question_text'])); ?></p>
+                        <!-- Question Card -->
+                        <div class="mb-10">
+                            <!-- Question Header -->
+                            <div class="flex items-start justify-between mb-4">
+                                <div class="flex-1">
+                                    <div class="text-gray-500 font-medium mb-2">Sual <?php echo $question_counter; ?>/<?php echo $question_stats['total']; ?></label>
+                                    <p class="text-gray-700 leading-relaxed text-lg"><?php echo nl2br(htmlspecialchars($question['question_text'])); ?></p>
+                                </label>
+                            </label>
+
+                            <!-- Answer Options -->
+                            <div class="mt-6">
+                                <h4 class="text-gray-600 font-medium mb-4">Cavabı seçin</h4>
                             
                             <?php
                             // Display options based on question type
@@ -957,67 +902,47 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['submit_exam'])) {
                                 ?>
                                     
                                     <?php if (!empty($options['var_a'])): ?>
-                                    <div class="option-card <?php echo $current_answer == 'a' ? 'selected' : ''; ?>" onclick="selectOption(this, 'option_a_<?php echo $question['id_question_text']; ?>')">
-                                        <input class="option-radio" type="radio" name="answer[<?php echo $question['id_question_text']; ?>]"
+                                    <label class="radio-option flex items-center gap-4 p-4 rounded-2xl border border-gray-200 cursor-pointer mb-3 hover:bg-gray-50 transition">
+                                        <input type="radio" name="answer[<?php echo $question['id_question_text']; ?>]"
                                             id="option_a_<?php echo $question['id_question_text']; ?>" value="a"
                                             <?php echo $current_answer == 'a' ? 'checked' : ''; ?>>
-                                        <label class="option-label" for="option_a_<?php echo $question['id_question_text']; ?>">
-                                            <div class="option-indicator"></div>
-                                            <div class="flex-1">
-                                                <span class="text-lg font-bold text-blue-600 mr-2">A)</span>
-                                                <span class="text-gray-800"><?php echo htmlspecialchars($options['var_a']); ?></span>
-                                            </div>
-                                        </label>
-                                    </div>
+                                        <div class="radio-indicator"></label>
+                                        <span class="text-gray-700"><?php echo htmlspecialchars($options['var_a']); ?></span>
+                                    </label>
                                     <?php endif; ?>
 
                                     <?php if (!empty($options['var_b'])): ?>
-                                    <div class="option-card <?php echo $current_answer == 'b' ? 'selected' : ''; ?>" onclick="selectOption(this, 'option_b_<?php echo $question['id_question_text']; ?>')">
-                                        <input class="option-radio" type="radio" name="answer[<?php echo $question['id_question_text']; ?>]"
+                                    <label class="radio-option flex items-center gap-4 p-4 rounded-2xl border border-gray-200 cursor-pointer mb-3 hover:bg-gray-50 transition">
+                                        <input type="radio" name="answer[<?php echo $question['id_question_text']; ?>]"
                                             id="option_b_<?php echo $question['id_question_text']; ?>" value="b"
                                             <?php echo $current_answer == 'b' ? 'checked' : ''; ?>>
-                                        <label class="option-label" for="option_b_<?php echo $question['id_question_text']; ?>">
-                                            <div class="option-indicator"></div>
-                                            <div class="flex-1">
-                                                <span class="text-lg font-bold text-blue-600 mr-2">B)</span>
-                                                <span class="text-gray-800"><?php echo htmlspecialchars($options['var_b']); ?></span>
-                                            </div>
-                                        </label>
-                                    </div>
+                                        <div class="radio-indicator"></div>
+                                        <span class="text-gray-700"><?php echo htmlspecialchars($options['var_b']); ?></span>
+                                    </label>
                                     <?php endif; ?>
 
                                     <?php if (!empty($options['var_c'])): ?>
-                                    <div class="option-card <?php echo $current_answer == 'c' ? 'selected' : ''; ?>" onclick="selectOption(this, 'option_c_<?php echo $question['id_question_text']; ?>')">
-                                        <input class="option-radio" type="radio" name="answer[<?php echo $question['id_question_text']; ?>]"
+                                    <label class="radio-option flex items-center gap-4 p-4 rounded-2xl border border-gray-200 cursor-pointer mb-3 hover:bg-gray-50 transition">
+                                        <input type="radio" name="answer[<?php echo $question['id_question_text']; ?>]"
                                             id="option_c_<?php echo $question['id_question_text']; ?>" value="c"
                                             <?php echo $current_answer == 'c' ? 'checked' : ''; ?>>
-                                        <label class="option-label" for="option_c_<?php echo $question['id_question_text']; ?>">
-                                            <div class="option-indicator"></div>
-                                            <div class="flex-1">
-                                                <span class="text-lg font-bold text-blue-600 mr-2">C)</span>
-                                                <span class="text-gray-800"><?php echo htmlspecialchars($options['var_c']); ?></span>
-                                            </div>
-                                        </label>
-                                    </div>
+                                        <div class="radio-indicator"></div>
+                                        <span class="text-gray-700"><?php echo htmlspecialchars($options['var_c']); ?></span>
+                                    </label>
                                     <?php endif; ?>
 
                                     <?php if (!empty($options['var_d'])): ?>
-                                    <div class="option-card <?php echo $current_answer == 'd' ? 'selected' : ''; ?>" onclick="selectOption(this, 'option_d_<?php echo $question['id_question_text']; ?>')">
-                                        <input class="option-radio" type="radio" name="answer[<?php echo $question['id_question_text']; ?>]"
+                                    <label class="radio-option flex items-center gap-4 p-4 rounded-2xl border border-gray-200 cursor-pointer mb-3 hover:bg-gray-50 transition">
+                                        <input type="radio" name="answer[<?php echo $question['id_question_text']; ?>]"
                                             id="option_d_<?php echo $question['id_question_text']; ?>" value="d"
                                             <?php echo $current_answer == 'd' ? 'checked' : ''; ?>>
-                                        <label class="option-label" for="option_d_<?php echo $question['id_question_text']; ?>">
-                                            <div class="option-indicator"></div>
-                                            <div class="flex-1">
-                                                <span class="text-lg font-bold text-blue-600 mr-2">D)</span>
-                                                <span class="text-gray-800"><?php echo htmlspecialchars($options['var_d']); ?></span>
-                                            </div>
-                                        </label>
-                                    </div>
+                                        <div class="radio-indicator"></div>
+                                        <span class="text-gray-700"><?php echo htmlspecialchars($options['var_d']); ?></span>
+                                    </label>
                                     <?php endif; ?>
                                     
                                 <?php } else { ?>
-                                    <div class="alert alert-danger">Variant məlumatları tapılmadı.</div>
+                                    <div class="alert alert-danger">Variant məlumatları tapılmadı.</label>
                                 <?php }
                                 
                             } elseif ($question['question_var'] == 'open') {
@@ -1031,7 +956,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['submit_exam'])) {
                                     <textarea class="form-control" id="open_answer_<?php echo $question['id_question_text']; ?>" 
                                         name="answer[<?php echo $question['id_question_text']; ?>]" rows="4" 
                                         placeholder="Cavabınızı buraya yazın..."><?php echo htmlspecialchars($current_answer); ?></textarea>
-                                </div>
+                                </label>
                                 
                             <?php } elseif ($question['question_var'] == 'matching') {
                                 // Matching question
@@ -1060,16 +985,16 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['submit_exam'])) {
                                                 </option>
                                             <?php endforeach; ?>
                                         </select>
-                                    </div>
+                                    </label>
                                     
                                 <?php } else { ?>
-                                    <div class="alert alert-danger">Uyğunluq məlumatları tapılmadı.</div>
+                                    <div class="alert alert-danger">Uyğunluq məlumatları tapılmadı.</label>
                                 <?php }
                             } ?>
-                        </div>
+                        </label>
                         <?php $question_counter++; ?>
                     <?php endforeach; ?>
-                </div>
+                </label>
                 
                 <!-- Material Panel - Reading or Listening -->
                 <?php if ($has_material_panel): ?>
@@ -1092,9 +1017,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['submit_exam'])) {
                                     <button type="button" class="font-btn" onclick="toggleFullscreen()" title="Tam ekran">
                                         <i class="fas fa-expand-arrows-alt"></i>
                                     </button>
-                                </div>
-                            </div>
-                        </div>
+                                </label>
+                            </label>
+                        </label>
                         
                         <div class="reading-content" id="readingContent">
                             <?php 
@@ -1114,7 +1039,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['submit_exam'])) {
                                 echo "</div>";
                             }
                             ?>
-                        </div>
+                        </label>
                         
                     <?php elseif ($has_listening_content): ?>
                         <!-- Listening Panel -->
@@ -1128,9 +1053,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['submit_exam'])) {
                                     <button type="button" class="font-btn" onclick="toggleFullscreen()" title="Tam ekran">
                                         <i class="fas fa-expand-arrows-alt"></i>
                                     </button>
-                                </div>
-                            </div>
-                        </div>
+                                </label>
+                            </label>
+                        </label>
                         
                         <div class="reading-content" style="background: #f0fdf4; display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 400px;">
                             <?php if (!empty($audio_paths[$group_key])): ?>
@@ -1138,7 +1063,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['submit_exam'])) {
                                     <div class="mb-4">
                                         <i class="fas fa-play-circle fa-4x text-success mb-3"></i>
                                         <h4 class="text-success">Dinləmə Audio</h4>
-                                    </div>
+                                    </label>
                                     
                                     <audio controls preload="metadata" class="w-100 mb-4" style="height: 60px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);" id="mainAudio_<?php echo $group_key; ?>">
                                         <source src="<?php echo htmlspecialchars($audio_paths[$group_key]); ?>" type="audio/mpeg">
@@ -1154,23 +1079,23 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['submit_exam'])) {
                                             <button type="button" class="btn btn-success w-100" onclick="playAudio('<?php echo $group_key; ?>')">
                                                 <i class="fas fa-play me-2"></i>Oynat
                                             </button>
-                                        </div>
+                                        </label>
                                         <div class="col-md-3">
                                             <button type="button" class="btn btn-warning w-100" onclick="pauseAudio('<?php echo $group_key; ?>')">
                                                 <i class="fas fa-pause me-2"></i>Dayan
                                             </button>
-                                        </div>
+                                        </label>
                                         <div class="col-md-3">
                                             <button type="button" class="btn btn-info w-100" onclick="restartAudio('<?php echo $group_key; ?>')">
                                                 <i class="fas fa-redo me-2"></i>Yenidən
                                             </button>
-                                        </div>
+                                        </label>
                                         <div class="col-md-3">
                                             <button type="button" class="btn btn-secondary w-100" onclick="adjustVolume('<?php echo $group_key; ?>')">
                                                 <i class="fas fa-volume-up me-2"></i>Səs
                                             </button>
-                                        </div>
-                                    </div>
+                                        </label>
+                                    </label>
                                     
                                     <div class="alert alert-info">
                                         <h6 class="text-info mb-2"><i class="fas fa-info-circle me-2"></i>Dinləmə Təlimatları:</h6>
@@ -1180,8 +1105,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['submit_exam'])) {
                                             <li>Əgər audio yüklənmirsə, səhifəni yenidən yükləyin</li>
                                             <li>Səs səviyyəsini tənzimləmək üçün "Səs" düyməsini istifadə edin</li>
                                         </ul>
-                                    </div>
-                                </div>
+                                    </label>
+                                </label>
                             <?php else: ?>
                                 <div class="alert alert-warning text-center p-4">
                                     <i class="fas fa-exclamation-triangle fa-2x mb-3 text-warning"></i><br>
@@ -1193,23 +1118,23 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['submit_exam'])) {
                                     <?php else: ?>
                                         <p class="small text-muted mb-0">Problemin həlli üçün <code>?debug=1</code> əlavə edin.</p>
                                     <?php endif; ?>
-                                </div>
+                                </label>
                             <?php endif; ?>
-                        </div>
+                        </label>
                     <?php endif; ?>
-                </div>
+                </label>
                 <?php endif; ?>
-            </div>
+            </label>
             
             <?php endforeach; ?>
             
             <!-- Submit Button -->
-            <div class="submit-container">
-                <button type="submit" name="submit_exam" class="btn-submit" onclick="return confirm('İmtahanı bitirmək istədiyinizə əminsiniz?')">
-                    <i class="fas fa-check-circle me-2"></i>İmtahanı bitir (<?php echo $question_stats['total']; ?> sual)
+            <div class="bg-white rounded-2xl shadow-2xl p-8 text-center mt-8">
+                <button type="submit" name="submit_exam" class="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white px-8 py-4 text-lg font-bold rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 inline-flex items-center gap-3">
+                    <i class="fas fa-check-circle text-2xl"></i>
+                    <span>İmtahanı bitir (<?php echo $question_stats['total']; ?> sual)</span>
                 </button>
-                <p class="mt-3 text-muted mb-0">
-                    <small>
+                <p class="mt-6 text-gray-500 text-sm">
                         <?php
                         $total_points = 0;
                         foreach ($grouped_questions as $group_data) {
@@ -1233,13 +1158,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['submit_exam'])) {
                         ?>
                     </small>
                 </p>
-            </div>
+            </label>
         </form>
-    </div>
+    </label>
 
-    <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    
     <script>
     let currentFontSize = 1.1;
     
@@ -1348,14 +1270,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['submit_exam'])) {
             }
         });
         
-        // Form submission handling
-        document.getElementById('examForm').addEventListener('submit', function(e) {
-            const submitBtn = this.querySelector('button[name="submit_exam"]');
-            if (submitBtn) {
-                submitBtn.disabled = true;
-                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Təqdim edilir...';
-            }
-        });
+        // Form submission handling - removed, now handled in the main submit listener below
         
         // Enhanced form validation
         const inputs = document.querySelectorAll('input[type="radio"], textarea, select');
@@ -1432,15 +1347,22 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['submit_exam'])) {
     });
     
     // Prevent accidental page refresh
-    window.addEventListener('beforeunload', function(e) {
-        const confirmationMessage = 'İmtahan davam edir. Səhifəni tərk etmək istədiyinizə əminsiniz?';
-        e.returnValue = confirmationMessage;
-        return confirmationMessage;
-    });
-    
+    let isFormSubmitting = false;
+
+    const beforeUnloadHandler = function(e) {
+        if (!isFormSubmitting) {
+            const confirmationMessage = 'İmtahan davam edir. Səhifəni tərk etmək istədiyinizə əminsiniz?';
+            e.returnValue = confirmationMessage;
+            return confirmationMessage;
+        }
+    };
+
+    window.addEventListener('beforeunload', beforeUnloadHandler);
+
     // Remove beforeunload when form is submitted
     document.getElementById('examForm').addEventListener('submit', function() {
-        window.removeEventListener('beforeunload', function() {});
+        isFormSubmitting = true;
+        window.removeEventListener('beforeunload', beforeUnloadHandler);
     });
     
     // Keyboard shortcuts
@@ -1581,25 +1503,66 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['submit_exam'])) {
     });
     
     // Warning for unanswered questions before submit
+    let confirmationDone = false;
+
     document.getElementById('examForm').addEventListener('submit', function(e) {
+        // If already confirmed, allow natural submission
+        if (confirmationDone) {
+            const submitBtn = this.querySelector('button[name="submit_exam"]');
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Təqdim edilir...';
+            }
+            isFormSubmitting = true;
+            return true; // Allow form to submit naturally
+        }
+
+        // First time - prevent and ask for confirmation
+        e.preventDefault();
+
         const totalQuestions = <?php echo $question_stats['total']; ?>;
-        const answeredQuestions = document.querySelectorAll('input[type="radio"]:checked').length + 
-                                 document.querySelectorAll('textarea').filter(ta => ta.value.trim() !== '').length +
-                                 document.querySelectorAll('select').filter(sel => sel.value !== '').length;
-        
+        const answeredQuestions = document.querySelectorAll('input[type="radio"]:checked').length +
+                                 Array.from(document.querySelectorAll('textarea')).filter(ta => ta.value.trim() !== '').length +
+                                 Array.from(document.querySelectorAll('select')).filter(sel => sel.value !== '').length;
+
+        let confirmMessage = 'İmtahanı bitirmək istədiyinizə əminsiniz?';
+
         if (answeredQuestions < totalQuestions) {
             const unanswered = totalQuestions - answeredQuestions;
-            const proceed = confirm(`${unanswered} sual cavabsız qalıb. Davam etmək istəyirsiniz?`);
-            
-            if (!proceed) {
-                e.preventDefault();
-                
+            confirmMessage = `Diqqət! ${unanswered} sual cavabsız qalıb.\n\nİmtahanı bitirmək istədiyinizə əminsiniz?`;
+        }
+
+        if (confirm(confirmMessage)) {
+            // User confirmed - set flag and submit
+            confirmationDone = true;
+            isFormSubmitting = true;
+
+            // Update button state
+            const submitBtn = this.querySelector('button[name="submit_exam"]');
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Təqdim edilir...';
+
+                // Add hidden input to ensure submit_exam is sent
+                const hiddenInput = document.createElement('input');
+                hiddenInput.type = 'hidden';
+                hiddenInput.name = 'submit_exam';
+                hiddenInput.value = '1';
+                this.appendChild(hiddenInput);
+
+                // Use HTMLFormElement.submit() to bypass event listeners
+                // This will submit the form directly to the server
+                HTMLFormElement.prototype.submit.call(this);
+            }
+        } else {
+            // User cancelled
+            if (answeredQuestions < totalQuestions) {
                 // Scroll to first unanswered question
                 const firstUnanswered = document.querySelector('.question-item:not(:has(input:checked, textarea:not([value=""]), select:not([value=""])))');
                 if (firstUnanswered) {
-                    firstUnanswered.scrollIntoView({ 
-                        behavior: 'smooth', 
-                        block: 'center' 
+                    firstUnanswered.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'center'
                     });
                     firstUnanswered.style.border = '3px solid #ef4444';
                     setTimeout(() => {
@@ -1668,7 +1631,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['submit_exam'])) {
                 <i class="fas fa-question-circle fa-3x text-warning mb-3"></i>
                 <h4>Təsdiq</h4>
                 <p class="text-muted">${message}</p>
-            </div>
+            </label>
             <div class="d-flex gap-2 justify-content-center">
                 <button class="btn btn-success px-4" onclick="confirmAction(true)">
                     <i class="fas fa-check me-2"></i>Bəli
@@ -1676,7 +1639,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['submit_exam'])) {
                 <button class="btn btn-secondary px-4" onclick="confirmAction(false)">
                     <i class="fas fa-times me-2"></i>Xeyr
                 </button>
-            </div>
+            </label>
         `;
         
         overlay.appendChild(dialog);

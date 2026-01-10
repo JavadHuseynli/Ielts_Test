@@ -1,5 +1,6 @@
 body {
-    background-color: #f8f9fa;
+    background-color: #ffffff;
+    color: #6b21a8;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
@@ -34,7 +35,7 @@ body {
 .table {
     width: 100%;
     margin-bottom: 1rem;
-    color: #212529;
+    color: #4b5563;
     vertical-align: middle;
 }
 
@@ -126,7 +127,7 @@ body {
 
 /* Giriş səhifəsi */
 .login-page {
-    background-color: #f8f9fa;
+    background-color: #ffffff;
     height: 100vh;
     display: flex;
     align-items: center;

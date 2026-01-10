@@ -5,7 +5,7 @@ require_once "../includes/db.php";
 require_once "../includes/auth.php";
 
 checkLogin();
-if (!is_admin() && !is_prorektor() && !is_kafedra() && !is_teacher()) {
+if (!is_admin() && !is_prorektor() && !is_dekan() && !is_kafedra() && !is_teacher()) {
     header("Location: ../login.php");
     exit();
 }
@@ -18,7 +18,7 @@ $db = $database->getConnection();
 
 $user_role = $_SESSION['role'];
 $user_id = $_SESSION['user_id'];
-$user_subject_id = isset($_SESSION['subject_id']) ? $_SESSION['subject_id'] : null;
+$teacher_subject_ids = isset($_SESSION['teacher_subjects']) ? $_SESSION['teacher_subjects'] : [];
 $user_group_id = isset($_SESSION['group_id']) ? $_SESSION['group_id'] : null;
 
 // Initialize counts
@@ -34,7 +34,7 @@ $base_group_query = "SELECT COUNT(*) as total FROM student_group";
 $base_subject_query = "SELECT COUNT(*) as total FROM subjects";
 $base_exam_query = "SELECT COUNT(*) as total FROM exams";
 
-if (is_admin() || is_prorektor() || is_kafedra()) {
+if (is_admin() || is_prorektor() || is_dekan() || is_kafedra()) {
     $stmt = $db->prepare($base_student_query); $stmt->execute(); $studentCount = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
     $stmt = $db->prepare($base_group_query); $stmt->execute(); $groupCount = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
     $stmt = $db->prepare($base_subject_query); $stmt->execute(); $subjectCount = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
@@ -73,14 +73,20 @@ if (is_admin() || is_prorektor() || is_kafedra()) {
     $groupDist = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 } elseif (is_teacher()) {
-    if ($user_subject_id) {
-        $stmt = $db->prepare($base_subject_query . " WHERE id_subject = :subject_id");
-        $stmt->bindParam(":subject_id", $user_subject_id);
+    if (!empty($teacher_subject_ids)) {
+        $placeholders = implode(',', array_fill(0, count($teacher_subject_ids), '?'));
+
+        $stmt = $db->prepare($base_subject_query . " WHERE id_subject IN ($placeholders)");
+        foreach ($teacher_subject_ids as $index => $subject_id) {
+            $stmt->bindValue($index + 1, $subject_id, PDO::PARAM_INT);
+        }
         $stmt->execute();
         $subjectCount = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
 
-        $stmt = $db->prepare($base_exam_query . " WHERE id_subject = :subject_id");
-        $stmt->bindParam(":subject_id", $user_subject_id);
+        $stmt = $db->prepare($base_exam_query . " WHERE id_subject IN ($placeholders)");
+        foreach ($teacher_subject_ids as $index => $subject_id) {
+            $stmt->bindValue($index + 1, $subject_id, PDO::PARAM_INT);
+        }
         $stmt->execute();
         $examCount = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
 
@@ -93,28 +99,32 @@ if (is_admin() || is_prorektor() || is_kafedra()) {
                   FROM exams e
                   JOIN subjects s ON e.id_subject = s.id_subject
                   JOIN student_group sg ON e.id_student_group = sg.id_student_group
-                  WHERE e.id_subject = :subject_id
+                  WHERE e.id_subject IN ($placeholders)
                   ORDER BY e.datetime DESC LIMIT 5";
         $stmt = $db->prepare($query);
-        $stmt->bindParam(":subject_id", $user_subject_id);
+        foreach ($teacher_subject_ids as $index => $subject_id) {
+            $stmt->bindValue($index + 1, $subject_id, PDO::PARAM_INT);
+        }
         $stmt->execute();
         $recentExams = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // Get question files for teacher's subject
+        // Get question files for teacher's subjects
         $questionFilesQuery = "SELECT qf.id_read_quest_file, qf.file_title, qf.file_type,
                                COUNT(DISTINCT qr.id_question_text) as question_count
                                FROM question_files qf
                                LEFT JOIN question_read qr ON qf.id_read_quest_file = qr.id_read_quest_file
-                               WHERE qf.subject_id = :subject_id
+                               WHERE qf.subject_id IN ($placeholders)
                                GROUP BY qf.id_read_quest_file
                                ORDER BY qf.created_at DESC
                                LIMIT 10";
         $stmt = $db->prepare($questionFilesQuery);
-        $stmt->bindParam(":subject_id", $user_subject_id);
+        foreach ($teacher_subject_ids as $index => $subject_id) {
+            $stmt->bindValue($index + 1, $subject_id, PDO::PARAM_INT);
+        }
         $stmt->execute();
         $questionFiles = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // Get exam results summary for teacher's subject
+        // Get exam results summary for teacher's subjects
         $resultsQuery = "SELECT e.id_exam, e.date_exam, s.subjectname, sg.group_number,
                          COUNT(DISTINCT a.user_id) as total_students,
                          AVG(a.is_correct) * 100 as avg_percentage
@@ -122,14 +132,35 @@ if (is_admin() || is_prorektor() || is_kafedra()) {
                          JOIN subjects s ON e.id_subject = s.id_subject
                          JOIN student_group sg ON e.id_student_group = sg.id_student_group
                          LEFT JOIN answers a ON e.id_exam = a.exam_id
-                         WHERE e.id_subject = :subject_id AND e.status = 'completed'
+                         WHERE e.id_subject IN ($placeholders) AND e.status = 'completed'
                          GROUP BY e.id_exam
                          ORDER BY e.date_exam DESC
                          LIMIT 5";
         $stmt = $db->prepare($resultsQuery);
-        $stmt->bindParam(":subject_id", $user_subject_id);
+        foreach ($teacher_subject_ids as $index => $subject_id) {
+            $stmt->bindValue($index + 1, $subject_id, PDO::PARAM_INT);
+        }
         $stmt->execute();
         $examResults = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Get teacher's subjects with details
+        $teacherSubjectsQuery = "SELECT s.id_subject, s.subjectname, s.timer,
+                                 COUNT(DISTINCT qf.id_read_quest_file) as file_count,
+                                 COUNT(DISTINCT qr.id_question_text) as question_count,
+                                 SUM(CASE WHEN qr.approved = 0 THEN 1 ELSE 0 END) as pending_questions,
+                                 SUM(CASE WHEN qr.approved = 1 THEN 1 ELSE 0 END) as approved_questions
+                                 FROM subjects s
+                                 LEFT JOIN question_files qf ON s.id_subject = qf.subject_id
+                                 LEFT JOIN question_read qr ON qf.id_read_quest_file = qr.id_read_quest_file
+                                 WHERE s.id_subject IN ($placeholders)
+                                 GROUP BY s.id_subject
+                                 ORDER BY s.subjectname";
+        $stmt = $db->prepare($teacherSubjectsQuery);
+        foreach ($teacher_subject_ids as $index => $subject_id) {
+            $stmt->bindValue($index + 1, $subject_id, PDO::PARAM_INT);
+        }
+        $stmt->execute();
+        $teacherSubjects = $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 }
 
@@ -146,10 +177,11 @@ $topPerformersQuery = "SELECT u.id_users, u.f_name, u.username, sg.group_number,
     LEFT JOIN student_group sg ON u.group_id = sg.id_student_group
     WHERE u.status = 'student'";
 
-if (is_teacher() && $user_subject_id) {
+if (is_teacher() && !empty($teacher_subject_ids)) {
+    $placeholders = implode(',', array_fill(0, count($teacher_subject_ids), '?'));
     $topPerformersQuery .= " AND EXISTS (
         SELECT 1 FROM exams e
-        WHERE e.id_exam = a.exam_id AND e.id_subject = :subject_id
+        WHERE e.id_exam = a.exam_id AND e.id_subject IN ($placeholders)
     )";
 }
 
@@ -159,8 +191,10 @@ $topPerformersQuery .= " GROUP BY u.id_users
     LIMIT 10";
 
 $stmt = $db->prepare($topPerformersQuery);
-if (is_teacher() && $user_subject_id) {
-    $stmt->bindParam(":subject_id", $user_subject_id);
+if (is_teacher() && !empty($teacher_subject_ids)) {
+    foreach ($teacher_subject_ids as $index => $subject_id) {
+        $stmt->bindValue($index + 1, $subject_id, PDO::PARAM_INT);
+    }
 }
 $stmt->execute();
 $topPerformers = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -179,9 +213,10 @@ $groupAveragesQuery = "SELECT sg.group_number, sg.id_student_group,
     LEFT JOIN answers a ON u.id_users = a.user_id
     LEFT JOIN question_read qr ON a.id_questions = qr.id_question_text";
 
-if (is_teacher() && $user_subject_id) {
+if (is_teacher() && !empty($teacher_subject_ids)) {
+    $placeholders = implode(',', array_fill(0, count($teacher_subject_ids), '?'));
     $groupAveragesQuery .= " LEFT JOIN exams e ON a.exam_id = e.id_exam
-    WHERE e.id_subject = :subject_id";
+    WHERE e.id_subject IN ($placeholders)";
 }
 
 $groupAveragesQuery .= " GROUP BY sg.id_student_group
@@ -189,8 +224,10 @@ $groupAveragesQuery .= " GROUP BY sg.id_student_group
     ORDER BY avg_success_rate DESC";
 
 $stmt = $db->prepare($groupAveragesQuery);
-if (is_teacher() && $user_subject_id) {
-    $stmt->bindParam(":subject_id", $user_subject_id);
+if (is_teacher() && !empty($teacher_subject_ids)) {
+    foreach ($teacher_subject_ids as $index => $subject_id) {
+        $stmt->bindValue($index + 1, $subject_id, PDO::PARAM_INT);
+    }
 }
 $stmt->execute();
 $groupAverages = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -225,7 +262,7 @@ if(isset($examStats)) {
 
 <!-- Stats Cards with 3D Effect -->
 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-8">
-    <?php if (is_admin() || is_prorektor() || is_kafedra()): ?>
+    <?php if (is_admin() || is_prorektor() || is_dekan() || is_kafedra()): ?>
     <!-- Students Card -->
     <div class="card-hover glass rounded-2xl sm:rounded-3xl p-4 sm:p-6 relative overflow-hidden group animate-scale-in" style="animation-delay: 0.1s">
         <div class="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-cyan-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
@@ -348,10 +385,78 @@ if(isset($examStats)) {
     <?php endif; ?>
 </div>
 
+<!-- Teacher Subjects Section -->
+<?php if (is_teacher() && isset($teacherSubjects) && !empty($teacherSubjects)): ?>
+<div class="glass rounded-2xl sm:rounded-3xl overflow-hidden card-hover animate-fade-in mb-6 sm:mb-8" style="animation-delay: 0.5s">
+    <div class="px-4 sm:px-6 py-4 sm:py-5 border-b border-white/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-gradient-to-r from-purple-500/10 via-pink-500/10 to-transparent">
+        <h2 class="text-lg sm:text-xl font-bold text-gray-900 flex items-center">
+            <span class="w-3 h-3 bg-purple-500 rounded-full mr-2 sm:mr-3 animate-pulse"></span>
+            Mənim Fənnlərim
+        </h2>
+        <a href="subjects.php" class="inline-flex items-center px-4 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold text-white bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl hover:shadow-xl hover:-translate-y-0.5 transition-all">
+            Hamısı
+            <svg class="w-3 h-3 sm:w-4 sm:h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+            </svg>
+        </a>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 p-4 sm:p-6">
+        <?php foreach ($teacherSubjects as $subject): ?>
+        <div class="bg-white/80 backdrop-blur-sm rounded-xl shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden border border-gray-200 hover:border-purple-300 group">
+            <div class="p-5">
+                <div class="flex justify-between items-start mb-3">
+                    <h3 class="text-lg font-bold text-gray-900 group-hover:text-purple-600 transition-colors">
+                        <?php echo htmlspecialchars($subject['subjectname']); ?>
+                    </h3>
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+                        <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <?php echo $subject['timer']; ?> dəq
+                    </span>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 mb-4">
+                    <div class="bg-gray-50 rounded-lg p-3 text-center">
+                        <p class="text-2xl font-bold text-gray-900"><?php echo $subject['file_count'] ?? 0; ?></p>
+                        <p class="text-xs text-gray-600">Fayl</p>
+                    </div>
+                    <div class="bg-gray-50 rounded-lg p-3 text-center">
+                        <p class="text-2xl font-bold text-gray-900"><?php echo $subject['question_count'] ?? 0; ?></p>
+                        <p class="text-xs text-gray-600">Sual</p>
+                    </div>
+                </div>
+
+                <?php if ($subject['pending_questions'] > 0): ?>
+                <div class="mb-4 px-3 py-2 bg-yellow-50 border-l-4 border-yellow-400 rounded">
+                    <p class="text-xs font-semibold text-yellow-800 flex items-center">
+                        <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                        </svg>
+                        <?php echo $subject['pending_questions']; ?> sual təsdiq gözləyir
+                    </p>
+                </div>
+                <?php endif; ?>
+
+                <a href="questions.php?subject=<?php echo $subject['id_subject']; ?>"
+                   class="w-full inline-flex items-center justify-center px-4 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm font-semibold rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all shadow-md hover:shadow-lg group-hover:scale-105">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                    </svg>
+                    Suallara Bax
+                </a>
+            </div>
+        </div>
+        <?php endforeach; ?>
+    </div>
+</div>
+<?php endif; ?>
+
 <!-- Charts and Tables Section -->
 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 mb-6 sm:mb-8">
     <!-- Exam Status Chart -->
-    <?php if (is_admin() || is_prorektor() || is_kafedra()): ?>
+    <?php if (is_admin() || is_prorektor() || is_dekan() || is_kafedra()): ?>
     <div class="glass rounded-2xl sm:rounded-3xl p-4 sm:p-6 card-hover animate-fade-in" style="animation-delay: 0.5s">
         <h3 class="text-base sm:text-lg font-bold text-gray-900 mb-3 sm:mb-4 flex items-center">
             <span class="w-2 h-2 bg-primary-500 rounded-full mr-2 animate-pulse"></span>
@@ -378,7 +483,7 @@ if(isset($examStats)) {
             <span class="w-3 h-3 bg-primary-500 rounded-full mr-2 sm:mr-3 animate-pulse"></span>
             Son İmtahanlar
         </h2>
-        <?php if (is_admin() || is_prorektor() || is_kafedra()): ?>
+        <?php if (is_admin() || is_prorektor() || is_dekan() || is_kafedra()): ?>
         <a href="exams.php" class="inline-flex items-center px-4 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold text-white bg-gradient-to-r from-primary-600 to-cyan-600 rounded-xl hover:shadow-xl hover:-translate-y-0.5 transition-all">
             Hamısını gör
             <svg class="w-3 h-3 sm:w-4 sm:h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -682,85 +787,6 @@ if(isset($examStats)) {
 </div>
 <?php endif; ?>
 
-<!-- Teacher-Specific Sections -->
-<?php if (is_teacher() && isset($questionFiles)): ?>
-<!-- Question Files Section -->
-<div class="glass rounded-2xl sm:rounded-3xl overflow-hidden card-hover animate-fade-in mt-6 sm:mt-8" style="animation-delay: 0.8s">
-    <div class="px-4 sm:px-6 py-4 sm:py-5 border-b border-white/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-gradient-to-r from-white/50 to-transparent">
-        <h2 class="text-lg sm:text-xl font-bold text-gray-900 flex items-center">
-            <span class="w-3 h-3 bg-purple-500 rounded-full mr-2 sm:mr-3 animate-pulse"></span>
-            Sual Faylları
-        </h2>
-        <a href="questions.php?subject=<?php echo $user_subject_id; ?>" class="inline-flex items-center px-4 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold text-white bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl hover:shadow-xl hover:-translate-y-0.5 transition-all">
-            İdarə et
-            <svg class="w-3 h-3 sm:w-4 sm:h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
-            </svg>
-        </a>
-    </div>
-
-    <div class="overflow-x-auto -mx-4 sm:mx-0">
-        <table class="min-w-full divide-y divide-gray-200/50">
-            <thead>
-                <tr class="bg-gradient-to-r from-gray-50/50 to-transparent">
-                    <th class="px-3 sm:px-6 py-3 sm:py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">ID</th>
-                    <th class="px-3 sm:px-6 py-3 sm:py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Fayl</th>
-                    <th class="px-3 sm:px-6 py-3 sm:py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider hidden md:table-cell">Növ</th>
-                    <th class="px-3 sm:px-6 py-3 sm:py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Sual</th>
-                    <th class="px-3 sm:px-6 py-3 sm:py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider hidden lg:table-cell">Cəmi</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-200/30">
-                <?php if (empty($questionFiles)): ?>
-                    <tr>
-                        <td colspan="5" class="px-3 sm:px-6 py-12 sm:py-16 text-center">
-                            <div class="flex flex-col items-center">
-                                <svg class="w-12 h-12 sm:w-16 sm:h-16 text-gray-300 mb-3 sm:mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                                </svg>
-                                <p class="text-xs sm:text-sm font-medium text-gray-500">Sual faylı tapılmadı</p>
-                            </div>
-                        </td>
-                    </tr>
-                <?php else: ?>
-                    <?php foreach ($questionFiles as $file): ?>
-                        <tr class="hover:bg-white/30 transition-colors">
-                            <td class="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap">
-                                <span class="text-xs sm:text-sm font-bold text-gray-900">#<?php echo $file['id_read_quest_file']; ?></span>
-                            </td>
-                            <td class="px-3 sm:px-6 py-3 sm:py-4">
-                                <div class="flex items-center">
-                                    <div class="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center mr-2 sm:mr-3 flex-shrink-0">
-                                        <svg class="w-4 h-4 sm:w-5 sm:h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                                        </svg>
-                                    </div>
-                                    <span class="text-xs sm:text-sm font-medium text-gray-900 truncate"><?php echo htmlspecialchars($file['file_title']); ?></span>
-                                </div>
-                            </td>
-                            <td class="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm text-gray-600 hidden md:table-cell">
-                                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                    <?php echo htmlspecialchars($file['file_type']); ?>
-                                </span>
-                            </td>
-                            <td class="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap">
-                                <span class="inline-flex items-center px-2 sm:px-3 py-1 rounded-full text-xs font-bold text-gray-900 bg-gray-100">
-                                    <?php echo $file['question_count']; ?>
-                                </span>
-                            </td>
-                            <td class="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap hidden lg:table-cell">
-                                <span class="inline-flex items-center px-2 sm:px-3 py-1 rounded-full text-xs font-bold text-white bg-gradient-to-r from-green-500 to-emerald-500">
-                                    <?php echo $file['question_count']; ?> sual
-                                </span>
-                            </td>
-                        </tr>
-                    <?php endforeach; ?>
-                <?php endif; ?>
-            </tbody>
-        </table>
-    </div>
-</div>
-
 <!-- Exam Results Section -->
 <?php if (isset($examResults) && !empty($examResults)): ?>
 <div class="glass rounded-2xl sm:rounded-3xl overflow-hidden card-hover animate-fade-in mt-6 sm:mt-8" style="animation-delay: 0.9s">
@@ -828,13 +854,12 @@ if(isset($examStats)) {
     </div>
 </div>
 <?php endif; ?>
-<?php endif; ?>
 
 <!-- Chart.js Scripts -->
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // Exam Status Doughnut Chart
-    <?php if (is_admin() || is_prorektor() || is_kafedra()): ?>
+    <?php if (is_admin() || is_prorektor() || is_dekan() || is_kafedra()): ?>
     const examStatusCtx = document.getElementById('examStatusChart');
     if(examStatusCtx) {
         new Chart(examStatusCtx, {

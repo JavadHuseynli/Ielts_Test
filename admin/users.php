@@ -76,23 +76,37 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['add_user'])) {
     $password = trim($_POST['password']);
     $status = $_POST['role'];
     $group_id = ($status == 'student' && !empty($_POST['group_id'])) ? $_POST['group_id'] : null;
-    $subject_id = ($status == 'muellim' && !empty($_POST['subject_id'])) ? $_POST['subject_id'] : null;
+    $subject_ids = ($status == 'muellim' && !empty($_POST['subject_ids'])) ? $_POST['subject_ids'] : [];
 
     if (!empty($f_name) && !empty($username) && !empty($password)) {
         try {
             $hashed_password = password_hash($password, PASSWORD_DEFAULT);
 
-            $query = "INSERT INTO users (f_name, username, password, status, group_id, subject_id)
-                      VALUES (:f_name, :username, :password, :status, :group_id, :subject_id)";
+            // Insert user without subject_id
+            $query = "INSERT INTO users (f_name, username, password, status, group_id)
+                      VALUES (:f_name, :username, :password, :status, :group_id)";
             $stmt = $db->prepare($query);
             $stmt->bindParam(":f_name", $f_name);
             $stmt->bindParam(":username", $username);
             $stmt->bindParam(":password", $hashed_password);
             $stmt->bindParam(":status", $status);
             $stmt->bindParam(":group_id", $group_id);
-            $stmt->bindParam(":subject_id", $subject_id);
 
             if ($stmt->execute()) {
+                $new_user_id = $db->lastInsertId();
+
+                // If teacher, insert subjects into teacher_subjects table
+                if ($status == 'muellim' && !empty($subject_ids)) {
+                    $insert_subject_query = "INSERT INTO teacher_subjects (teacher_id, subject_id) VALUES (:teacher_id, :subject_id)";
+                    $subject_stmt = $db->prepare($insert_subject_query);
+
+                    foreach ($subject_ids as $subject_id) {
+                        $subject_stmt->bindParam(":teacher_id", $new_user_id);
+                        $subject_stmt->bindParam(":subject_id", $subject_id);
+                        $subject_stmt->execute();
+                    }
+                }
+
                 $message = 'İstifadəçi uğurla əlavə edildi!';
                 $message_type = 'success';
             } else {
@@ -122,7 +136,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['edit_user'])) {
     $password = trim($_POST['edit_password']);
     $status = $_POST['edit_role'];
     $group_id = ($status == 'student' && !empty($_POST['edit_group_id'])) ? $_POST['edit_group_id'] : null;
-    $subject_id = ($status == 'muellim' && !empty($_POST['edit_subject_id'])) ? $_POST['edit_subject_id'] : null;
+    $subject_ids = ($status == 'muellim' && !empty($_POST['edit_subject_ids'])) ? $_POST['edit_subject_ids'] : [];
 
     if (!empty($f_name) && !empty($username)) {
         try {
@@ -130,13 +144,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['edit_user'])) {
             if (!empty($password)) {
                 $hashed_password = password_hash($password, PASSWORD_DEFAULT);
                 $query = "UPDATE users SET f_name = :f_name, username = :username, password = :password,
-                          status = :status, group_id = :group_id, subject_id = :subject_id
+                          status = :status, group_id = :group_id
                           WHERE id_users = :id";
                 $stmt = $db->prepare($query);
                 $stmt->bindParam(":password", $hashed_password);
             } else {
                 $query = "UPDATE users SET f_name = :f_name, username = :username,
-                          status = :status, group_id = :group_id, subject_id = :subject_id
+                          status = :status, group_id = :group_id
                           WHERE id_users = :id";
                 $stmt = $db->prepare($query);
             }
@@ -145,10 +159,30 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['edit_user'])) {
             $stmt->bindParam(":username", $username);
             $stmt->bindParam(":status", $status);
             $stmt->bindParam(":group_id", $group_id);
-            $stmt->bindParam(":subject_id", $subject_id);
             $stmt->bindParam(":id", $user_id);
 
             if ($stmt->execute()) {
+                // If teacher, update subjects in teacher_subjects table
+                if ($status == 'muellim') {
+                    // Delete existing subjects for this teacher
+                    $delete_query = "DELETE FROM teacher_subjects WHERE teacher_id = :teacher_id";
+                    $delete_stmt = $db->prepare($delete_query);
+                    $delete_stmt->bindParam(":teacher_id", $user_id);
+                    $delete_stmt->execute();
+
+                    // Insert new subjects
+                    if (!empty($subject_ids)) {
+                        $insert_subject_query = "INSERT INTO teacher_subjects (teacher_id, subject_id) VALUES (:teacher_id, :subject_id)";
+                        $subject_stmt = $db->prepare($insert_subject_query);
+
+                        foreach ($subject_ids as $subject_id) {
+                            $subject_stmt->bindParam(":teacher_id", $user_id);
+                            $subject_stmt->bindParam(":subject_id", $subject_id);
+                            $subject_stmt->execute();
+                        }
+                    }
+                }
+
                 $message = 'İstifadəçi uğurla yeniləndi!';
                 $message_type = 'success';
             } else {
@@ -230,10 +264,13 @@ $total_users = $count_stmt->fetch(PDO::FETCH_ASSOC)['total'];
 $total_pages = ceil($total_users / $items_per_page);
 
 // Main query
-$query = "SELECT u.id_users, u.f_name, u.username, u.status as role, u.group_id, u.subject_id, sg.group_number, s.subjectname
+$query = "SELECT u.id_users, u.f_name, u.username, u.status as role, u.group_id, sg.group_number,
+          GROUP_CONCAT(DISTINCT s.subjectname SEPARATOR ', ') as subjectnames,
+          GROUP_CONCAT(DISTINCT ts.subject_id) as subject_ids
           FROM users u
           LEFT JOIN student_group sg ON u.group_id = sg.id_student_group
-          LEFT JOIN subjects s ON u.subject_id = s.id_subject
+          LEFT JOIN teacher_subjects ts ON u.id_users = ts.teacher_id
+          LEFT JOIN subjects s ON ts.subject_id = s.id_subject
           WHERE (sg.is_archived = 0 OR u.group_id IS NULL)";
 
 $params = array();
@@ -247,7 +284,7 @@ if (!empty($group_filter)) {
     $params[':group_id'] = $group_filter;
 }
 
-$query .= " ORDER BY u.status, u.f_name LIMIT :limit OFFSET :offset";
+$query .= " GROUP BY u.id_users ORDER BY u.status, u.f_name LIMIT :limit OFFSET :offset";
 
 $stmt = $db->prepare($query);
 foreach ($params as $key => $value) {
@@ -261,6 +298,7 @@ $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
 $roles = [
     'admin' => 'Admin',
     'prorektor' => 'Prorektor',
+    'dekan' => 'Dekan',
     'kafedra' => 'Kafedra',
     'muellim' => 'Müəllim',
     'student' => 'Tələbə'
@@ -269,6 +307,7 @@ $roles = [
 $role_colors = [
     'admin' => 'from-red-500 to-pink-500',
     'prorektor' => 'from-blue-500 to-cyan-500',
+    'dekan' => 'from-teal-500 to-cyan-500',
     'kafedra' => 'from-amber-500 to-orange-500',
     'muellim' => 'from-purple-500 to-pink-500',
     'student' => 'from-green-500 to-emerald-500'
@@ -294,6 +333,16 @@ $role_permissions = [
             'Kafedranın bəzi səlahiyyətlərini icra edir',
             'İmtahanları idarə edə bilir',
             'Ümumi hesabatları görə bilir'
+        ]
+    ],
+    'dekan' => [
+        'icon' => 'M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z',
+        'title' => 'Dekan Səlahiyyətləri',
+        'permissions' => [
+            'Tələbələrin imtahan nəticələrini görə bilir',
+            'Fakültə üzrə hesabatları görə bilir',
+            'İmtahan prosesini izləyə bilir',
+            'Nəticələri ixrac edə bilir'
         ]
     ],
     'kafedra' => [
@@ -549,8 +598,8 @@ $role_permissions = [
                                     <?php
                                     if ($user['role'] == 'student' && $user['group_number']) {
                                         echo '<span class="inline-flex items-center px-2.5 py-1 rounded-lg bg-green-50 text-green-700 text-xs font-medium border border-green-200"><svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>' . $user['group_number'] . '</span>';
-                                    } elseif ($user['role'] == 'muellim' && $user['subjectname']) {
-                                        echo '<span class="inline-flex items-center px-2.5 py-1 rounded-lg bg-purple-50 text-purple-700 text-xs font-medium border border-purple-200"><svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>' . $user['subjectname'] . '</span>';
+                                    } elseif ($user['role'] == 'muellim' && $user['subjectnames']) {
+                                        echo '<span class="inline-flex items-center px-2.5 py-1 rounded-lg bg-purple-50 text-purple-700 text-xs font-medium border border-purple-200"><svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>' . $user['subjectnames'] . '</span>';
                                     } else {
                                         echo '<span class="text-gray-400">-</span>';
                                     }
@@ -560,7 +609,7 @@ $role_permissions = [
                                     <div class="flex items-center justify-end gap-2">
                                         <!-- Edit Button - Material Design -->
                                         <button type="button"
-                                                @click="openEdit(<?php echo $user['id_users']; ?>, '<?php echo htmlspecialchars($user['f_name'], ENT_QUOTES); ?>', '<?php echo htmlspecialchars($user['username'], ENT_QUOTES); ?>', '<?php echo $user['role']; ?>', <?php echo $user['group_id'] ?? 'null'; ?>, <?php echo $user['subject_id'] ?? 'null'; ?>)"
+                                                @click="openEdit(<?php echo $user['id_users']; ?>, '<?php echo htmlspecialchars($user['f_name'], ENT_QUOTES); ?>', '<?php echo htmlspecialchars($user['username'], ENT_QUOTES); ?>', '<?php echo $user['role']; ?>', <?php echo $user['group_id'] ?? 'null'; ?>, '<?php echo isset($user['subject_ids']) ? htmlspecialchars($user['subject_ids'], ENT_QUOTES) : ''; ?>')"
                                                 class="group relative inline-flex items-center justify-center px-4 py-2.5 overflow-hidden font-medium text-indigo-600 transition duration-300 ease-out border-2 border-indigo-500 rounded-lg shadow-md hover:shadow-xl cursor-pointer">
                                             <span class="absolute inset-0 flex items-center justify-center w-full h-full text-white duration-300 -translate-x-full bg-indigo-500 group-hover:translate-x-0 ease pointer-events-none">
                                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -708,13 +757,13 @@ $role_permissions = [
                             </select>
                         </div>
                         <div id="subjectField" class="hidden">
-                            <label for="subject_id" class="block text-sm font-medium text-gray-700">Fənn</label>
-                            <select name="subject_id" id="subject_id" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
-                                <option value="">Fənn seçin...</option>
+                            <label for="subject_ids" class="block text-sm font-medium text-gray-700">Fənnlər (Çoxlu seçim mümkündür)</label>
+                            <select name="subject_ids[]" id="subject_ids" multiple size="8" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
                                 <?php foreach ($subjects as $subject): ?>
                                     <option value="<?php echo $subject['id_subject']; ?>"><?php echo htmlspecialchars($subject['subjectname']); ?></option>
                                 <?php endforeach; ?>
                             </select>
+                            <p class="mt-1 text-xs text-gray-500">Ctrl/Cmd basaraq bir neçə fənn seçə bilərsiniz</p>
                         </div>
                     </div>
                 </div>
@@ -777,13 +826,13 @@ $role_permissions = [
                             </select>
                         </div>
                         <div id="editSubjectField" class="hidden">
-                            <label for="edit_subject_id" class="block text-sm font-medium text-gray-700">Fənn</label>
-                            <select name="edit_subject_id" id="edit_subject_id" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
-                                <option value="">Fənn seçin...</option>
+                            <label for="edit_subject_ids" class="block text-sm font-medium text-gray-700">Fənnlər (Çoxlu seçim mümkündür)</label>
+                            <select name="edit_subject_ids[]" id="edit_subject_ids" multiple size="8" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
                                 <?php foreach ($subjects as $subject): ?>
                                     <option value="<?php echo $subject['id_subject']; ?>"><?php echo htmlspecialchars($subject['subjectname']); ?></option>
                                 <?php endforeach; ?>
                             </select>
+                            <p class="mt-1 text-xs text-gray-500">Ctrl/Cmd basaraq bir neçə fənn seçə bilərsiniz</p>
                         </div>
                     </div>
                 </div>
@@ -810,7 +859,7 @@ function userManagement() {
         showNotification: <?php echo !empty($message) ? 'true' : 'false'; ?>,
 
         // Open edit modal method
-        openEdit(userId, fName, username, role, groupId, subjectId) {
+        openEdit(userId, fName, username, role, groupId, subjectIds) {
             console.log('Opening edit modal for user:', userId);
 
             // Set form values
@@ -822,13 +871,23 @@ function userManagement() {
 
             // Clear previous selections
             document.getElementById('edit_group_id').value = '';
-            document.getElementById('edit_subject_id').value = '';
+            const subjectSelect = document.getElementById('edit_subject_ids');
+            if (subjectSelect) {
+                for (let i = 0; i < subjectSelect.options.length; i++) {
+                    subjectSelect.options[i].selected = false;
+                }
+            }
 
-            // Set group or subject based on role
+            // Set group or subjects based on role
             if (role === 'student' && groupId) {
                 document.getElementById('edit_group_id').value = groupId;
-            } else if (role === 'muellim' && subjectId) {
-                document.getElementById('edit_subject_id').value = subjectId;
+            } else if (role === 'muellim' && subjectIds) {
+                const subjectIdArray = subjectIds.split(',').filter(id => id.trim() !== '');
+                for (let i = 0; i < subjectSelect.options.length; i++) {
+                    if (subjectIdArray.includes(subjectSelect.options[i].value)) {
+                        subjectSelect.options[i].selected = true;
+                    }
+                }
             }
 
             // Toggle fields visibility
